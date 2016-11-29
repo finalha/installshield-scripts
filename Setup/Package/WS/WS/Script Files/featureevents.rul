@@ -1,0 +1,225 @@
+#include "common.rul"
+export prototype ApplicationServer_Installing();
+export prototype ApplicationServer_Installed();
+export prototype ApplicationServer_Uninstalling();
+export prototype ApplicationServer_Uninstalled();
+export prototype WebServer_Installing();
+export prototype WebServer_Installed();
+export prototype WebServer_Uninstalling();
+export prototype WebServer_Uninstalled();
+
+function ApplicationServer_Installed()
+NUMBER nvRet,nvResult,nResult,nRet;   
+STRING szGUID1,szGUID2;   
+NUMBER nResult1 , nResult2;    
+STRING szOEtmp,szNStmp,szAStmp;  
+STRING szWebconf; 
+STRING svResult; 
+STRING svReturnLine;
+NUMBER nvLineNumber;
+STRING svSetupPath;
+STRING szAuthentication;  
+begin
+Disable (CANCELBUTTON);
+	SdShowMsg ("Installing Application Server, please wait...", TRUE); 
+					
+   	nvResult = RunApplication( SUPPORTDIR ^ "InstallUser.bat"," \"" +svWSSInstalldir+ "\"",FALSE, TRUE,TRUE);
+   	if( nvResult != 0 ) then
+ 		WriteLogFile( "Failed add network service right to Application Server!" ); 
+	endif;
+   	WriteLogFile( MSG_INFO_STEP_OUT_INSTALL_IIS ); 
+    
+    //fix Bug ENG-6129 edit by liuyang 2016.04.14 begin
+    //操作64bit的system，即C:\Windwos\System32目录，必须先禁止重定向，操作结束后再开启重定向，否则会找不到对应的file和folder
+    Disable (WOW64FSREDIRECTION);
+    RunApplication( SUPPORTDIR ^ "InstallUser.bat","\"\" \"" +System64Folder^"netbrain_ng.lf"+"\"",FALSE, TRUE,TRUE);
+    RunApplication( SUPPORTDIR ^ "InstallUser.bat","\"\" \"" +System64Folder^"netbrain_ng01.ini"+"\"",FALSE, TRUE,TRUE);
+    RunApplication( SUPPORTDIR ^ "InstallUser.bat","\"" +System64Folder^"3201"+"\"",FALSE, TRUE,TRUE);
+    //fix Bug ENG-6129 edit by liuyang 2016.04.14 end  
+    //fix Bug ENG-6144 edit by liuyang 2016.04.18 begin       
+   	//nvResult = RunApplication( SUPPORTDIR ^ "RegCLSIDNetworkService.exe", "",FALSE, TRUE,TRUE);
+   	nvResult = RunApplication( SUPPORTDIR ^ "RegCLSIDNetworkService.bat", "",FALSE, TRUE,TRUE);
+	if( nvResult != 0 ) then 
+		 WriteLogFile( MSG_ERR_ADDREGNETWORKSERVICE ); 
+	endif;
+	
+	    
+    //fix Bug ENG-6954 edit by liuyang 2016.04.26 begin
+     if(FindFile(System64Folder,"NBAppData.ini",svResult) != 0) then 
+     CopyFileToDes(SUPPORTDIR^"NBAppData.ini",System64Folder^"NBAppData.ini");
+     RunApplication( SUPPORTDIR ^ "InstallUser.bat","\"\" \"" +System64Folder^"NBAppData.ini"+"\"",FALSE, TRUE,TRUE);
+     endif;
+    //fix Bug ENG-6954 edit by liuyang 2016.04.26 end
+	Enable (WOW64FSREDIRECTION);   
+    //fix Bug ENG-6144 edit by liuyang 2016.04.18 end
+    
+   	RunApplication(SUPPORTDIR ^ "InstallUserRight.bat"," \""+svWSSInstalldir+"\"", FALSE, TRUE,TRUE);
+   	
+   	szWebconf=svWSSInstalldir^"Web.config";
+   	
+   	//这里需要修改MongoDB，Redis，RebbitMQ的连接字符串，变量从前台页面获取，注意MongoDB的参数是mongos的
+   	/*
+   	if (nvCheckStandalone) then 
+   	nResult = RunApplication(SUPPORTDIR ^"WS_Config.bat","\""+svWSSInstalldir+"\" "+"\""+svamqpip+"\" "+"\""+svamqpport+"\" "+"\""+svredisip+"\" "+"\""+svredisport+"\" "+"\""+svmongodbip+"\" "+"\""+svmongodbport+"\"",FALSE,TRUE,TRUE);
+   	endif;
+   	if (nvCheckreplicaSet) then    	
+   	nResult = RunApplication(SUPPORTDIR ^"WS_Config_RS.bat","\""+svWSSInstalldir+"\" "+"\""+svamqpip+"\" "+"\""+svamqpport+"\" "+"\""+svredisip+"\" "+"\""+svredisport+"\" "+"\""+svreplicasetstr+"\" ",FALSE,TRUE,TRUE);
+   	endif;
+   	*/
+   	//nResult = RunApplication(SUPPORTDIR ^"WS_Config_RS.bat","\""+svWSSInstalldir+"\" "+"\""+svamqpip+"\" "+"\""+svamqpport+"\" "+"\""+svredisip+"\" "+"\""+svredisport+"\" "+"\""+svreplicasetstr+"\" ",FALSE,TRUE,TRUE);   	
+   	if (svrabbitmqssl = "true") then
+    if (rabbitMqTslVersion = "1.0") then
+    svrabbitmqtslversion="Tls10";
+    endif;
+    if (rabbitMqTslVersion = "1.1") then
+    svrabbitmqtslversion="Tls11";
+    endif;
+    if (rabbitMqTslVersion = "1.2") then
+    svrabbitmqtslversion="Tls12";
+    endif;
+    nResult = RunApplication(SUPPORTDIR ^"WS_Config_SSL.bat","\""+svWSSInstalldir+"\" "+"\""+svrabbitmqserversstr+"\" "+"\""+svredisip+"\" "+"\""+svredisport+"\" "+"\""+svreplicasetstr+"\" "+"\""+rabbitMqLocalPort+"\" "+"\""+svrabbitmqtslversion+"\" ",FALSE,TRUE,TRUE);
+    else
+    nResult = RunApplication(SUPPORTDIR ^"WS_Config_RS.bat","\""+svWSSInstalldir+"\" "+"\""+svrabbitmqserversstr+"\" "+"\""+svredisip+"\" "+"\""+svredisport+"\" "+"\""+svreplicasetstr+"\" "+"\""+rabbitMqLocalPort+"\" ",FALSE,TRUE,TRUE);
+    endif;
+       	
+    if (nResult!=0) then
+   		WriteLogFile("Fail to modify Web.config of Application Server"); 
+   	else 
+   	    WriteLogFile("Success to modify Web.config of Application Server"); 
+   	endif;
+   	
+   	
+   	nvResult = RunApplication( SUPPORTDIR ^ "InstallGW.bat","\""+svWSSSiteName+"\" \""+svWSSAppPool+"\" \""+svWSSVdir+"\" \""+svWSSInstalldir+"\" \"" +svWSSDisableFolderList+"\"",FALSE, TRUE,TRUE);
+	if( nvResult != 0 ) then
+ 		nRet = -1;
+	endif;
+   	WriteLogFile( MSG_INFO_STEP_OUT_INSTALL_IIS );
+   	   
+    GetIIS78Configs();
+    //确定了homepage的时候再调用
+    //CreateHomeShortCut();   
+    
+    SETUPTYPE=SETUPTYPE_WSS;
+    //和升级的updatelog文件夹有关，暂时不调用 
+	//WriteInfo(); 
+	    
+	SdShowMsg ("", FALSE); 
+	Enable (CANCELBUTTON);
+end;
+
+function ApplicationServer_Uninstalling()
+NUMBER nResult;
+begin  	
+	Disable (CANCELBUTTON);
+	nResult = RunApplication( SUPPORTDIR ^ "UninstallGw.bat","\""+svWSSSiteName+"\" \""+svWSSAppPool+"\" \""+svWSSVdir+"\"",FALSE, TRUE,TRUE);
+	if (nResult != 0) then
+		WriteLogFile( "Uninstall Application Server error!" ); 
+	endif;
+	Enable (CANCELBUTTON);
+	WriteLogFile("Uninstalling Application Server finished");	
+end;
+
+function ApplicationServer_Installing()
+NUMBER nResult;
+begin  	
+	Disable (CANCELBUTTON);
+	SetStatusWindow (5, "Uninstall Old Application Server");  
+	nResult = RunApplication( SUPPORTDIR ^ "UninstallGw.bat","\""+svWSSSiteName+"\" \""+svWSSAppPool+"\" \""+svWSSVdir+"\"",FALSE, TRUE,TRUE);
+	if (nResult != 0) then
+		WriteLogFile( "Uninstall Old Application Server error!" ); 
+	endif;
+	Enable (CANCELBUTTON);
+	WriteLogFile("Uninstalling Old Application Server finished");	
+end;
+
+function ApplicationServer_Uninstalled()
+begin
+    //delete shortcut
+    //DeleteFile(LICSHORTCUT);
+    Disable (CANCELBUTTON);
+    DeleteFolder(svWSSInstalldir); 
+    Enable (CANCELBUTTON);
+    WriteLogFile("Uninstalled Application Server finished");	
+end;
+
+function WebServer_Installed()
+NUMBER nvRet,nvResult,nResult,nRet;   
+STRING szGUID1,szGUID2;   
+NUMBER nResult1 , nResult2;    
+STRING szOEtmp,szNStmp,szAStmp;  
+STRING szWebconf; 
+STRING svResult; 
+STRING svReturnLine;
+NUMBER nvLineNumber;
+STRING svSetupPath;
+STRING szAuthentication;  
+begin
+Disable (CANCELBUTTON);
+	SdShowMsg ("Installing Web Server, please wait...", TRUE); 
+					
+   	nResult = RunApplication( SUPPORTDIR ^ "InstallUser.bat"," \"" +svWSCInstalldir+ "\"",FALSE, TRUE,TRUE);
+   	if( nResult != 0 ) then
+ 		WriteLogFile( "Failed add network service right to Web Server!" ); 
+	endif;
+   	WriteLogFile( MSG_INFO_STEP_OUT_INSTALL_IIS ); 
+   	
+   	RunApplication(SUPPORTDIR ^ "InstallUserRight.bat"," \""+svWSCInstalldir+"\"", FALSE, TRUE,TRUE);
+   	
+   	szWebconf=svWSCInstalldir^"Web.config";
+   	
+   	//这里需要输入其它变量，变量从前台页面获取
+   	//RunApplication("cscript.exe"," \""+SUPPORTDIR ^"replacefiletext.vbs"+"\" \""+szWebconf+"\" \""+szOEtmp+"\" \""+szOEpath+"\" \""+szWebconf+"\"",FALSE,TRUE,TRUE); 
+   	
+   	nResult = RunApplication( SUPPORTDIR ^ "InstallGW.bat","\""+svWSCSiteName+"\" \""+svWSCAppPool+"\" \""+svWSCVdir+"\" \""+svWSCInstalldir+"\" \"" +svWSCDisableFolderList+"\"",FALSE, TRUE,TRUE);
+	if( nResult != 0 ) then
+ 		nRet = -1;
+	endif;
+   	WriteLogFile( MSG_INFO_STEP_OUT_INSTALL_IIS );
+   	   
+    GetIIS78Configs();
+    //确定了homepage的时候再调用
+    //CreateHomeShortCut();   
+    
+    SETUPTYPE=SETUPTYPE_WSC;
+    //和升级的updatelog文件夹有关，暂时不调用 
+	//WriteInfo(); 
+	    
+	SdShowMsg ("", FALSE); 
+	Enable (CANCELBUTTON);
+end;
+
+function WebServer_Uninstalling()
+NUMBER nResult;
+begin  	
+	Disable (CANCELBUTTON);
+	nResult = RunApplication( SUPPORTDIR ^ "UninstallGw.bat","\""+svWSCSiteName+"\" \""+svWSCAppPool+"\" \""+svWSCVdir+"\"",FALSE, TRUE,TRUE);
+	if (nResult != 0) then
+		WriteLogFile( "Uninstall Web Server error!" ); 
+	endif;
+	Enable (CANCELBUTTON);
+	WriteLogFile( "Uninstalling Web Server finished" ); 	
+end;
+
+
+function WebServer_Uninstalled()
+begin
+    //delete shortcut
+    //DeleteFile(LICSHORTCUT);
+    Disable (CANCELBUTTON);
+    DeleteFolder(svWSCInstalldir); 
+    Enable (CANCELBUTTON);
+    WriteLogFile( "Uninstalled Web Server finished" ); 
+end;
+
+function WebServer_Installing()
+NUMBER nResult;
+begin
+	Disable (CANCELBUTTON);
+	SetStatusWindow (10, "Uninstall Old Web Server");  
+	nResult = RunApplication( SUPPORTDIR ^ "UninstallGw.bat","\""+svWSCSiteName+"\" \""+svWSCAppPool+"\" \""+svWSCVdir+"\"",FALSE, TRUE,TRUE);
+	if (nResult != 0) then
+		WriteLogFile( "Uninstall Old Web Server error!" ); 
+	endif;
+	Enable (CANCELBUTTON);
+	WriteLogFile( "Uninstalling Old Web Server finished" ); 
+end;

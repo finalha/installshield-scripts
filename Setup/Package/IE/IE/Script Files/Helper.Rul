@@ -1,0 +1,536 @@
+#define TAB "   "
+#define NBCONFIG "NBConfig.json"
+
+prototype DoInstallWorkerServerServices();
+prototype DoUninstallWorkerServerServices();
+prototype InstallWebService();
+prototype GetIIS78Configs();
+prototype WriteRegistryWorkerServer();
+prototype WriteRegistryWebAPIService();
+prototype WriteRegistryWebServer();
+
+prototype CreateConfFile(STRING, STRING, STRING, BOOL);
+prototype WriteConfLine(NUMBER, STRING);
+prototype WriteRabbitMqConf(NUMBER, BOOL, BOOL);
+prototype WriteRedisConf(NUMBER, BOOL, BOOL);
+prototype WriteMongoDbConf(NUMBER, BOOL, BOOL);
+prototype WriteServersUrl(NUMBER, STRING);
+prototype WriteUser(NUMBER, STRING, BOOL);
+prototype WritePassword(NUMBER, STRING, BOOL);
+prototype WritePort(NUMBER, STRING);
+prototype WriteReplicaSet(NUMBER, STRING);
+prototype WriteUseSsl(NUMBER, STRING, STRING);
+prototype WriteUseCert(NUMBER, STRING, BOOL);
+prototype UploadCertFile(STRING, STRING);
+prototype ValidateUserInput(STRING, STRING, STRING);
+
+function DoInstallWorkerServerServices()
+	NUMBER nResult;
+	STRING registerResourceManager, svWorkerServerInstallDir;
+begin   	          
+	WriteLogFile("Begin to install service NetBrain Worker Server");
+
+	svWorkerServerInstallDir = INSTALLDIR ^ "Worker Server";
+
+	// Modify conf file end
+	nResult = RunApplication(SUPPORTDIR ^"installRMservice.bat","\""+svWorkerServerInstallDir+"\"",FALSE,TRUE,TRUE);
+
+	if (nResult!=0) then
+		WriteLogFile("Fail to install service NetBrain Worker Server"); 
+	else 
+		WriteLogFile("Success to install service NetBrain Worker Server");
+	endif;
+    
+end;   
+
+function DoUninstallWorkerServerServices()
+number nResult,nvResult;
+begin
+    if ( ServiceExistsService ( "ResourceManager" )) then 
+   		ServiceGetServiceState ("ResourceManager" , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The NetBrain Worker Server Service has been stopped.");
+         else
+			ServiceStopService ( "ResourceManager"  ); 
+         endif;
+        nResult = RunApplication("taskkill" , "/F /IM ResourceManagerService.exe /T", FALSE,TRUE,FALSE );
+        //nResult = RunApplication("taskkill" , "/F /IM NBProxyServerDaemon.exe /T", FALSE,TRUE,FALSE );
+        if (nResult!=0) then
+    		WriteLogFile("Fail to taskkill ResourceManagerService.exe"); 
+    	else 
+    		WriteLogFile("Success to taskkill ResourceManagerService.exe");
+    	endif;   
+   		ServiceRemoveService( "ResourceManager"  );
+   	else
+   	    WriteLogFile("There is no ResourceManager");
+   	endif;
+end;  
+
+function InstallWebService()
+begin
+	GetOSVer();
+
+	// Check .NET framework 4.5
+	WriteLogFile("Check .NET framework 4.5.");
+	if (Checkdotnetframework45() = 0) then
+		WriteLogFile(MSG_ERR_NETFX45_NOTEXISTS);
+		abort;
+	endif;
+
+	// Install IIS
+	if (svOSVer = "win2008") then
+		WriteLogFile("Check IIS 7.");
+		if (IISInstalled("7") = 0) then
+			WriteLogFile("Install IIS 7.");
+			if (InstallIIS("7") = 0) then
+				WriteLogFile("Failed to install IIS 7.0");
+				abort;
+			endif;
+		endif;
+	elseif (svOSVer = "win2012") then
+		WriteLogFile("Check IIS 8.");
+		if (IISInstalled("8") = 0) then
+			WriteLogFile("Install IIS 8.");
+			if (InstallIIS("8") = 0) then
+				WriteLogFile("Failed to install IIS 8.0");
+				abort;
+			endif;
+		endif;
+	endif;
+
+	if (CheckIIS() = 0) then
+		if (svOSVer = "win2008") then
+			WriteLogFile(MSG_ERR_NEED_IIS2008);
+		elseif (svOSVer = "win2012") then
+			WriteLogFile(MSG_ERR_NEED_IIS2012);
+		endif;
+	endif;
+	
+	// Install ASP.NET.
+	if (svOSVer = "win2008") then
+		WriteLogFile("Checking ASP.NET on Windows 2008.");
+
+		if (AspNetInstalled("ASPNET") = 0) then
+			if (InstallAspNet("ASPNET") = 0) then
+				WriteLogFile("Failed to install ASP.NET.");
+				abort;
+			endif;
+		else
+			WriteLogFile("Asp.Net has already been installed."); 
+		endif;
+	elseif (svOSVer = "win2012") then
+		WriteLogFile("Checking ASP.NET on Windows 2012.");
+
+		if (AspNetInstalled("ASPNET45") = 0) then
+			if (InstallAspNet("ASPNET45") = 0) then
+				WriteLogFile("Failed to install ASP.NET 4.5.");
+				abort;
+			endif;
+		else
+			WriteLogFile("Asp.Net 4.5 has already been installed."); 
+		endif;
+	endif;
+
+	//Check asp.net state
+	if (CheckAspnetState() == 0) then
+		WriteLogFile("Error: Failed to change aspnet_state service start type."); 
+	endif;
+
+end;
+
+function GetIIS78Configs() 
+STRING szConfigs;   
+STRING szConfigBindings;   
+NUMBER nindex,nindex1;
+NUMBER nFileHandletmp,nResult; 
+begin   
+	szConfigs = ""; 
+	RunApplication(SUPPORTDIR ^"IIS78Getconfigs.bat",SUPPORTDIR ^"defaultsiteconfig.txt",FALSE,TRUE,TRUE);	
+	szConfigs = ReadString(SUPPORTDIR,"defaultsiteconfig.txt",TRUE);
+	if(StrLength(szConfigs)<1)then
+		return 0;
+	endif; 
+	//default web name
+	nindex = StrFind( szConfigs,"\"");	
+	if(nindex<0)then
+		return 0;
+	endif;
+	nindex1 = StrFindEx(szConfigs,"\"",nindex+1);
+	if(nindex1<0)then
+		return 0;
+	endif;
+	StrSub( svDefaultSiteName,szConfigs,nindex+1,nindex1-nindex-1);
+	//ip port
+	nindex = StrFind(szConfigs,"http/");
+	nindex1= StrFindEx(szConfigs,":",nindex+1);
+	nindex1= StrFindEx(szConfigs,":",nindex1+1); 	
+	if(nindex>0)&& (nindex1>nindex)then
+	    StrSub( szConfigBindings,szConfigs,nindex+5,nindex1-nindex+1-5);
+		DeleteFile(SUPPORTDIR ^"defaultsiteipport.txt"); 
+		OpenFileMode (FILE_MODE_APPEND);   
+ 		nResult = CreateFile(nFileHandletmp,SUPPORTDIR, "defaultsiteipport.txt" );   
+ 		if( nResult < 0 ) then 
+ 		  	return 0; 
+        endif;         
+        //Ð´Èë×Ö·û´®   
+        nResult = WriteLine(nFileHandletmp,"\""+szConfigBindings+"\"");   
+        nResult = WriteLine(nFileHandletmp,"\""+szConfigBindings+"\"");     
+        CloseFile(nFileHandletmp);		
+	else
+		return 0;
+	endif;	
+end;
+
+function WriteRegistryWorkerServer()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+	if(SYSINFO.bIsWow64) then 
+		REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+		nvType = REGDB_STRING; 
+		nvSize = -1;  
+	
+		if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+			RegDBSetKeyValueEx(REGPATH_WORKERSERVER,"InstallDir", nvType, svWorkerServerInstalldir, nvSize);
+			RegDBSetKeyValueEx(REGPATH_WORKERSERVER,"Version",nvType,VIEWVERSION,nvSize);			
+		endif;
+	endif;   
+end;
+
+function WriteRegistryWebAPIService()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+    if(SYSINFO.bIsWow64) then 
+		REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+		nvType = REGDB_STRING; 
+		nvSize = -1;  
+		if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+			RegDBSetKeyValueEx(REGPATH_WEBAPISERVICE,"user", nvType, svUserName, nvSize);
+			RegDBSetKeyValueEx(REGPATH_WEBAPISERVICE, "company", nvType, szCompany, nvSize);
+			RegDBSetKeyValueEx(REGPATH_WEBAPISERVICE, "netbrainDir", nvType, INSTALLDIR, nvSize);
+			
+			GetSystemInfo( DATE, nvReturn, svResult );  
+			svTemp = svResult;
+			svTemp = svTemp + " ";
+			GetSystemInfo( TIME, nvReturn, svResult );
+			svTemp = svTemp + svResult;
+				
+			RegDBSetKeyValueEx(REGPATH_WEBAPISERVICE, "InstallTime", nvType, svTemp ,nvSize);
+			RegDBSetKeyValueEx(REGPATH_WEBAPISERVICE, "Version", nvType, VIEWVERSION, nvSize);
+		endif;
+    endif;  
+end; 
+
+function WriteRegistryWebServer()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+    if(SYSINFO.bIsWow64) then 
+		REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+		nvType = REGDB_STRING; 
+		nvSize = -1;  
+		if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+			RegDBSetKeyValueEx(REGPATH_WEBSERVER,"user",nvType,svUserName,nvSize);
+			RegDBSetKeyValueEx(REGPATH_WEBSERVER,"company",nvType,szCompany,nvSize);
+			RegDBSetKeyValueEx(REGPATH_WEBSERVER,"netbrainDir",nvType,INSTALLDIR,nvSize);
+			
+			GetSystemInfo( DATE, nvReturn, svResult );  
+			svTemp = svResult;
+			svTemp = svTemp + " ";
+			GetSystemInfo( TIME, nvReturn, svResult );
+			svTemp = svTemp + svResult;
+				
+			RegDBSetKeyValueEx(REGPATH_WEBSERVER,"InstallTime",nvType, svTemp ,nvSize);
+			RegDBSetKeyValueEx(REGPATH_WEBSERVER,"Version",nvType,VIEWVERSION,nvSize);
+		endif;
+    endif;  
+end; 
+
+function CreateConfFile(filePath, fileName, comment, encrypt)
+	NUMBER nvFileHandle;
+	STRING line;
+begin
+	OpenFileMode(FILE_MODE_APPEND);
+	
+	if (CreateFile(nvFileHandle, filePath, fileName) < 0) then
+		WriteLogFile("Failed to create file: " + filePath + fileName);
+		return FALSE;
+	else
+		WriteConfLine(nvFileHandle, "{");
+
+		WriteConfLine(nvFileHandle, TAB + comment);
+		WriteConfLine(nvFileHandle, "");
+
+		WriteRabbitMqConf(nvFileHandle, TRUE, encrypt);
+		WriteRedisConf(nvFileHandle, TRUE, encrypt);
+		WriteMongoDbConf(nvFileHandle, FALSE, encrypt);
+
+		WriteConfLine(nvFileHandle, "}");
+	endif;
+	
+	CloseFile(nvFileHandle);
+	return TRUE;
+end;
+
+function WriteRabbitMqConf(nvFileHandle, addEndComma, encrypt)
+	NUMBER nResult;
+	STRING szValue, szItem;	
+begin
+	WriteConfLine(nvFileHandle, TAB + "\"amqp_servers\":{");
+
+	szValue = "";
+
+	if (rabbitMqServers != LIST_NULL) then
+		nResult = ListGetFirstString(rabbitMqServers, szItem);
+		
+		while (nResult != END_OF_LIST)
+			if (StrLength(szItem) > 0) then
+				if (StrLength(szValue) > 0) then
+					szValue = szValue + ",\"" + szItem + "\"";
+				else
+					szValue = "\"" + szItem + "\"";
+				endif;
+			endif;
+			nResult = ListGetNextString(rabbitMqServers, szItem);
+		endwhile;
+	endif;
+	
+	WriteServersUrl(nvFileHandle, szValue);
+	
+	WriteUser(nvFileHandle, rabbitMqUsername, encrypt);
+	WritePassword(nvFileHandle, rabbitMqPassword, encrypt);
+	WritePort(nvFileHandle, rabbitMqLocalPort);
+	
+	if (rabbitMqUseSsl == BUTTON_CHECKED) then
+		WriteUseSsl(nvFileHandle, "tsl", "true");
+		WriteUseCert(nvFileHandle, "true", encrypt);
+	else
+		WriteUseSsl(nvFileHandle, "tsl", "false");
+		WriteUseCert(nvFileHandle, "false", encrypt);
+	endif;
+		
+	if (addEndComma == TRUE) then
+		WriteConfLine(nvFileHandle, TAB + "},");
+	else
+		WriteConfLine(nvFileHandle, TAB + "}");
+	endif;
+end;
+
+function WriteRedisConf(nvFileHandle, addEndComma, encrypt)
+	NUMBER nResult;
+	STRING szValue, szItem;	
+begin
+	WriteConfLine(nvFileHandle, TAB + "\"redis_servers\":{");
+
+	szValue = "\"" + redisServer + "\"";
+	WriteServersUrl(nvFileHandle, szValue);
+	
+	WritePassword(nvFileHandle, redisPassword, encrypt);
+	WritePort(nvFileHandle, redisLocalPort);
+	
+	if (redisUseSsl == BUTTON_CHECKED) then
+		WriteUseSsl(nvFileHandle, "ssl", "true");
+		WriteUseCert(nvFileHandle, "true", encrypt);
+	else
+		WriteUseSsl(nvFileHandle, "ssl", "false");
+		WriteUseCert(nvFileHandle, "false", encrypt);
+	endif;
+
+	if (addEndComma == TRUE) then
+		WriteConfLine(nvFileHandle, TAB + "},");
+	else
+		WriteConfLine(nvFileHandle, TAB + "}");
+	endif;
+end;
+
+function WriteMongoDbConf(nvFileHandle, addEndComma, encrypt)
+	NUMBER nResult;
+	STRING szValue, szItem;	
+begin
+	WriteConfLine(nvFileHandle, TAB + "\"mongodb_servers\":{");
+
+	szValue = "";
+
+	if (mongoDbServers != LIST_NULL) then
+		nResult = ListGetFirstString(mongoDbServers, szItem);
+		
+		while (nResult != END_OF_LIST)
+			if (StrLength(szItem) > 0) then
+				if (StrLength(szValue) > 0) then
+					szValue = szValue + ",\"" + szItem + "\"";
+				else
+					szValue = "\"" + szItem + "\"";
+				endif;
+			endif;
+			nResult = ListGetNextString(mongoDbServers, szItem);
+		endwhile;
+	endif;
+	
+	WriteServersUrl(nvFileHandle, szValue);
+	
+	WriteUser(nvFileHandle, mongoDbUsername, encrypt);
+	WritePassword(nvFileHandle, mongoDbPassword, encrypt);
+	WriteReplicaSet(nvFileHandle, mongoDbReplicaSetName);
+	
+	if (mongoDbUseSsl == BUTTON_CHECKED) then
+		WriteUseSsl(nvFileHandle, "ssl", "true");
+		WriteUseCert(nvFileHandle, "true", encrypt);
+	else
+		WriteUseSsl(nvFileHandle, "ssl", "false");
+		WriteUseCert(nvFileHandle, "false", encrypt);
+	endif;
+
+	if (addEndComma == TRUE) then
+		WriteConfLine(nvFileHandle, TAB + "},");
+	else
+		WriteConfLine(nvFileHandle, TAB + "}");
+	endif;
+end;
+
+function WriteServersUrl(nvFileHandle, servers)
+begin
+	WriteConfLine(nvFileHandle, TAB + TAB + 
+								"\"servers_URL\":" +
+								"[" + servers + "],");
+end;
+
+function WriteUser(nvFileHandle, user, encrypt)
+	STRING encryptedUser;
+begin
+	if (encrypt == TRUE) then
+		encryptedUser = GetEncyptedString(user);
+		WriteConfLine(nvFileHandle, TAB + TAB + 
+									"\"user\":" +
+									"\"encrypted:" + encryptedUser + "\",");
+	else
+		WriteConfLine(nvFileHandle, TAB + TAB + 
+									"\"user\":" +
+									"\"" + user + "\",");
+	endif;
+end;
+
+function WritePassword(nvFileHandle, password, encrypt)
+	STRING encryptedPwd;
+begin
+	if (encrypt == TRUE) then
+		encryptedPwd = GetEncyptedString(password);
+		WriteConfLine(nvFileHandle, TAB + TAB + 
+									"\"password\":" +
+									"\"encrypted:" + encryptedPwd + "\",");
+	else
+		WriteConfLine(nvFileHandle, TAB + TAB + 
+									"\"password\":" +
+									"\"" + password + "\",");
+	endif;
+end;
+
+function WritePort(nvFileHandle, port)
+begin
+	WriteConfLine(nvFileHandle, TAB + TAB + 
+								"\"port\":" +
+								port + ",");
+end;
+
+function WriteReplicaSet(nvFileHandle, replicaSet)
+begin
+	WriteConfLine(nvFileHandle, TAB + TAB + 
+								"\"replicaSet\":" +
+								"\"" + replicaSet + "\",");
+end;
+
+function WriteUseSsl(nvFileHandle, ssl, useSsl)
+begin
+	WriteConfLine(nvFileHandle, TAB + TAB + 
+								"\"" + ssl + "\":" +
+								useSsl + ",");
+end;
+
+function WriteUseCert(nvFileHandle, useSSL, encrypt)
+	STRING szValue;
+begin
+	szValue = "none";
+
+	if (encrypt == TRUE &&
+		useSSL = "true" &&
+		ignoreCa == BUTTON_UNCHECKED) then
+			szValue = "verify_ca_no_limit";
+	endif;
+	
+	WriteConfLine(nvFileHandle, TAB + TAB + 
+								"\"cert_verification\":" +
+								"\"" + szValue + "\"");
+end;
+
+function WriteConfLine(nvFileHandle, line)
+begin
+	if (WriteLine(nvFileHandle, line) < 0) then
+		WriteLogFile("Failed to write line: " + line);
+	endif;
+end;
+
+function UploadCertFile(szDestFolder, szSourceFile)
+	STRING fileName;
+begin
+	if (ExistsDir(szDestFolder) != EXISTS) then
+		if (CreateDir(szDestFolder) < 0) then
+			WriteLogFile("Failed to create folder: " + szDestFolder);
+			return FALSE;
+		endif;
+	endif;
+	
+	if (ParsePath (fileName, szSourceFile, FILENAME) < 0) then
+		WriteLogFile("Failed to parse file name from " + szSourceFile);
+		return FALSE;
+	endif;
+	
+	CopyFileToDes(szSourceFile, szDestFolder ^ fileName);
+	return TRUE;
+end;
+
+function ValidateUserInput(exeFile, errorFile, component)
+	NUMBER nResult;
+	STRING content;
+begin
+
+	if (CreateConfFile(SUPPORTDIR, NBCONFIG,
+					   "\"__comment__\": \"" + component + "\",",
+					   FALSE) == FALSE) then
+		MessageBox("Failed to create the json file for validating " +
+					component + " information.", SEVERE);
+		DeleteFile(SUPPORTDIR ^ NBCONFIG); 
+		return FALSE;
+	endif;
+	
+	if (Is(FILE_EXISTS, SUPPORTDIR ^ exeFile) == FALSE) then
+		MessageBox("Failed to validate " + component + " information. " +
+					 exeFile + " does not exist.", SEVERE);
+		DeleteFile(SUPPORTDIR ^ NBCONFIG); 
+		return FALSE;
+	endif;
+
+	RunApplication(SUPPORTDIR ^ exeFile, "", FALSE, TRUE, TRUE);
+
+	if (Is(FILE_EXISTS, SUPPORTDIR ^ errorFile) == FALSE) then
+		MessageBox("Failed to validate " + component + " information. " +
+					 errorFile + " does not exist.", SEVERE);
+		DeleteFile(SUPPORTDIR ^ NBCONFIG); 
+		return FALSE;
+	endif;
+	
+	content = ReadString(SUPPORTDIR, errorFile, TRUE); 	
+
+	if (content = "") then
+		WriteLogFile("Successfully valiated " + component + " information."); 
+	else
+		WriteLogFile("Failed to validate " + component + " information: " + content); 
+
+		MessageBox("Failed to validate " + component + " information. Please refer to " + 
+		            SUPPORTDIR ^ errorFile + " for details.", SEVERE);
+		DeleteFile(SUPPORTDIR ^ NBCONFIG); 
+		return FALSE;
+	endif;
+
+	DeleteFile(SUPPORTDIR ^ NBCONFIG); 
+	return TRUE;
+end;

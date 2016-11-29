@@ -1,0 +1,389 @@
+#include "Helper.Rul"
+
+export prototype Mongodbinit_Installing();
+export prototype Mongodbinit_Installed();
+export prototype Mongodbinit_UnInstalling();
+export prototype Mongodbinit_UnInstalled();
+
+export prototype WorkerServer_Installing();
+export prototype WorkerServer_Installed();
+export prototype WorkerServer_UnInstalling();
+export prototype WorkerServer_UnInstalled();
+
+export prototype WebAPIService_Installing();
+export prototype WebAPIService_Installed();
+export prototype WebAPIService_Uninstalling();
+export prototype WebAPIService_Uninstalled();
+
+export prototype WebServer_Installing();
+export prototype WebServer_Installed();
+export prototype WebServer_Uninstalling();
+export prototype WebServer_Uninstalled();
+
+//---------------------------------------------------------------------------
+// The Installing event is sent before the feature Worker Server
+// is installed.
+//---------------------------------------------------------------------------
+function WorkerServer_Installing()
+begin
+	RunApplication(SUPPORTDIR^"mknetbrain.bat","\""+SETUPTYPE+"\"", FALSE,TRUE,TRUE );
+	WriteLogFile("Setup RM_Installing");
+	writeinfouninstall();
+	DoUninstallWorkerServerServices(); 
+    DeleteFolder(INSTALLDIR^"bin");
+end;
+
+//---------------------------------------------------------------------------
+// The Installed event is sent after the feature Worker Server
+// is installed.
+//---------------------------------------------------------------------------
+function WorkerServer_Installed()
+	STRING svStr,svSetupPath,svReturnLine; 
+	number nvLineNumber,nvServiceState;
+begin
+	WriteLogFile("Entering WorkerServer_Installed");
+
+	// Create the configuration file.
+	WriteLogFile("Creating NBConfig.json files.");
+   	CreateConfFile(INSTALLDIR ^ "Worker Server\\conf\\" , "NBConfig.json",
+				   "\"__comment__\": \"see fix_NBConfig.json file for more settings\",",
+				   TRUE);
+
+	// Upload the certificate
+	if (mongoDbUseSsl == BUTTON_CHECKED || rabbitMqUseSsl == BUTTON_CHECKED || redisUseSsl == BUTTON_CHECKED) then
+		if (ignoreCa != BUTTON_CHECKED) then
+			WriteLogFile("Upload the certs.");
+			UploadCertFile(INSTALLDIR ^ "Worker Server\\conf\\certs\\clientCerts", caPath);
+		endif;
+	endif;
+	
+   	//install and start service
+    SetStatusWindow (60, "Installing Services for NetBrain Worker Server");
+   	DoInstallWorkerServerServices();
+
+	WriteInfo();
+    WriteRegistryWorkerServer();
+
+	WriteLogFile("Exiting WorkerServer_Installed");
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalling event is sent just before the feature Worker Server
+// is uninstalled.
+//---------------------------------------------------------------------------
+function WorkerServer_UnInstalling()
+begin
+	WriteLogFile("Setup WorkerServer_UnInstalling"); 
+	DoUninstallWorkerServerServices();
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalled event is sent after the feature Work Server
+// is uninstalled.
+//---------------------------------------------------------------------------
+function WorkerServer_UnInstalled()
+begin
+	WriteLogFile("Setup WorkerServer_UnInstalled");   
+	writeinfouninstall();
+	RegDBDeleteKey("SOFTWARE\\NetBrain\\NetBrain Worker Server");
+	DeleteFolder( INSTALLDIR^"Worker Server");
+end;
+
+function Mongodbinit_Installing()
+begin
+	WriteLogFile("Entering Mongodbinit_Installing");
+	WriteLogFile("Exiting Mongodbinit_Installing");
+end;
+
+function Mongodbinit_Installed()
+	STRING pathvalue, szUseSsl;
+	STRING svlisttitle,svlistmsg,svtxtpath,svtxtname;
+	NUMBER nvSize,nvType;
+begin
+	nvType=REGDB_STRING_EXPAND;
+	WriteLogFile("Entering Mongodbinit_Installed");
+
+	Disable(WOW64FSREDIRECTION);
+	//copy msvcr100 to system folder
+	CopyFileToDes(INSTALLDIR ^ "Python34\\msvcr100.dll",
+					System64Folder ^ "msvcr100.dll");
+
+	if (mongoDbUseSsl == BUTTON_CHECKED) then
+		szUseSsl = "true";
+	else
+		szUseSsl = "false";
+	endif;
+	
+	WriteLogFile("Start to initialize MongoDB.");
+	// Mongodb_init.bat will handle if the database should be initialized or upgraded.
+	nResult = RunApplicationWithLog(SUPPORTDIR ^ "Mongodb_init.bat", "\"" + 
+	                                INSTALLDIR ^ "Python34\" \"" + 
+	                                svMongodbinitInstalldir + "\" \"" + 
+	                                svMongodbprimaryIP + "\" \"" + 
+	                                svMongodbprimaryPort + "\" \"" + 
+	                                mongoDbReplicaSetName + "\" \"" + 
+	                                szUseSsl + "\" \"" + 
+	                                mongoDbUsername + "\" \"" + 
+	                                mongoDbPassword + "\"",                     
+	                                FALSE, TRUE, TRUE, FALSE);
+	WriteLogFile("Finished initializing MongoDB.");
+
+	if (Is(FILE_EXISTS, svMongodbinitInstalldir ^ "error.log") = TRUE) then
+		WriteLogFile("Failed to initialize the data of Mongodb."); 
+		svlisttitle="MongoDB initialization error.";
+		svlistmsg="The following is the error message: ";
+		svtxtpath=svMongodbinitInstalldir;
+		svtxtname="error.log";
+	   	listMongodbiniterror = ListCreate(STRINGLIST);
+		ShowListContentFromTxt(svlisttitle,svlistmsg,listMongodbiniterror,svtxtpath,svtxtname);
+	else       		
+		WriteLogFile("Successfully initialized the data of MongoDB.");
+	endif;
+	WriteLogFile("Exiting Mongodbinit_Installed");
+end;
+
+function Mongodbinit_UnInstalling()
+begin
+end;
+
+function Mongodbinit_UnInstalled()
+begin
+WriteLogFile("Setup Mongodbinit_UnInstalled");
+DeleteFolder( svMongodbinitInstalldir);
+end;
+
+// Web Server
+
+function WebAPIService_Installing()
+	NUMBER nResult;
+begin
+	Disable (CANCELBUTTON);
+	WriteLogFile( "Entering WebAPIService_Installing."); 
+
+	InstallWebService();
+
+	Enable (CANCELBUTTON);
+	WriteLogFile("Exiting WebAPIService_Installing."); 
+end;
+
+function WebAPIService_Installed()
+	NUMBER nvRet,nvResult,nResult,nRet;   
+	STRING szGUID1,szGUID2;   
+	NUMBER nResult1 , nResult2;    
+	STRING szOEtmp,szNStmp,szAStmp;  
+	STRING svResult; 
+	STRING svReturnLine;
+	NUMBER nvLineNumber;
+	STRING svSetupPath;
+	STRING szAuthentication;  
+begin
+	WriteLogFile("Entering WebAPIService_Installed");	
+	Disable (CANCELBUTTON);
+
+	// Create config file
+	CreateConfFile(INSTALLDIR ^ "Web Server\\nb_publish_server\\" , "NBConfig.json",
+	               "\"__comment__\": \"see fix_NBConfig.json file for more settings\",",
+	               TRUE);
+
+	// Upload the certificate
+	if (mongoDbUseSsl == BUTTON_CHECKED || rabbitMqUseSsl == BUTTON_CHECKED || redisUseSsl) then
+		if (ignoreCa != BUTTON_CHECKED) then
+			UploadCertFile(INSTALLDIR ^ "Web Server\\nb_publish_server\\conf\\certs\\clientCerts", caPath);
+		endif;
+	endif;
+				
+   	nvResult = RunApplication( SUPPORTDIR ^ "InstallUser.bat"," \"" +svWSSInstalldir+ "\"", FALSE, TRUE,TRUE);
+
+   	if( nvResult != 0 ) then
+ 		WriteLogFile( "Failed add network service right to Application Server!"); 
+	endif;
+
+    Disable (WOW64FSREDIRECTION);
+    RunApplication( SUPPORTDIR ^ "InstallUser.bat","\"\" \"" +System64Folder^"netbrain_ng.lf"+"\"",FALSE, TRUE,TRUE);
+    RunApplication( SUPPORTDIR ^ "InstallUser.bat","\"\" \"" +System64Folder^"netbrain_ng01.ini"+"\"",FALSE, TRUE,TRUE);
+
+   	nvResult = RunApplication( SUPPORTDIR ^ "RegCLSIDNetworkService.bat", "",FALSE, TRUE,TRUE);
+	if( nvResult != 0 ) then 
+		 WriteLogFile("Failed to add network service in reg clsid"); 
+	endif;
+
+	if(FindFile(System64Folder,"NBAppData.ini",svResult) != 0) then 
+		CopyFileToDes(SUPPORTDIR^"NBAppData.ini",System64Folder^"NBAppData.ini");
+		RunApplication( SUPPORTDIR ^ "InstallUser.bat","\"\" \"" +System64Folder^"NBAppData.ini"+"\"",FALSE, TRUE,TRUE);
+	endif;
+
+	Enable (WOW64FSREDIRECTION);   
+
+	RunApplication(SUPPORTDIR ^ "InstallUserRight.bat"," \""+svWSSInstalldir+"\"", FALSE, TRUE,TRUE);
+
+	if (nResult != 0) then
+		WriteLogFile("Fail to modify Web.config of Application Server"); 
+	else 
+		WriteLogFile("Success to modify Web.config of Application Server"); 
+	endif;
+
+	nvResult = RunApplication(SUPPORTDIR ^ "InstallGW.bat", "\"" + 
+							  svWSSSiteName + "\" \"" + 
+							  svWSSAppPool + "\" \"" + 
+							  svWSSVdir + "\" \"" + 
+							  svWSSInstalldir + "\" \"" + 
+							  svWSSDisableFolderList + "\"", 
+							  FALSE, TRUE,TRUE);
+
+	if( nvResult != 0 ) then
+		nRet = -1;
+	endif;
+
+	GetIIS78Configs();
+
+	WriteRegistryWebAPIService();
+
+	Enable (CANCELBUTTON);
+	WriteLogFile("Ending WebAPIService_Installed");	
+end;
+
+function WebAPIService_Uninstalling()
+	NUMBER nResult;
+begin  	
+	WriteLogFile("Entering WebAPIService_Uninstalling");	
+
+	Disable (CANCELBUTTON);
+
+	WriteLogFile( "Uninstalling Application Server." ); 
+
+	nResult = RunApplication(SUPPORTDIR ^ "UninstallGw.bat", "\"" + 
+							 svWSSSiteName + "\" \"" + svWSSAppPool + "\" \"" + svWSSVdir + "\"", 
+							 FALSE, TRUE,TRUE);
+
+	if (nResult != 0) then
+		WriteLogFile( "Uninstall Application Server error!" ); 
+	endif;
+	
+	Enable (CANCELBUTTON);
+	WriteLogFile("Ending WebAPIService_Uninstalling");
+end;
+
+function WebAPIService_Uninstalled()
+begin
+    WriteLogFile("Entering WebAPIService_Uninstalled."); 
+    Disable (CANCELBUTTON);
+
+	DeleteFolder(svWSSInstalldir); 
+	RegDBDeleteKey("SOFTWARE\\NetBrain\\NetBrain Web API Service");
+
+    Enable (CANCELBUTTON);
+    WriteLogFile("Ending WebAPIService_Uninstalled."); 
+end;
+
+
+// Web Client
+
+function WebServer_Installing()
+	NUMBER nResult;
+begin
+	Disable (CANCELBUTTON);
+	WriteLogFile( "Entering WebServer_Installing."); 
+
+	InstallWebService();
+
+	Enable (CANCELBUTTON);
+	WriteLogFile("Exiting WebServer_Installing."); 
+end;
+
+function WebServer_Installed()
+	NUMBER nvRet,nvResult,nResult,nRet;   
+	STRING szGUID1,szGUID2;   
+	NUMBER nResult1 , nResult2;    
+	STRING szOEtmp,szNStmp,szAStmp;  
+	STRING svResult; 
+	STRING svReturnLine;
+	NUMBER nvLineNumber;
+	STRING svSetupPath;
+	STRING szAuthentication;  
+begin
+	WriteLogFile("Entering WebServer_Installed");	
+	Disable (CANCELBUTTON);
+
+	// Create config file
+	CreateConfFile(INSTALLDIR ^ "Web Server\\nb_publish_client\\" , "NBConfig.json",
+	               "\"__comment__\": \"see fix_NBConfig.json file for more settings\",",
+	               TRUE);
+					
+   	nResult = RunApplication(SUPPORTDIR ^ "InstallUser.bat", " \"" + svWSCInstalldir+ "\"", FALSE, TRUE,TRUE);
+
+   	if( nResult != 0 ) then
+ 		WriteLogFile( "Failed add network service right to Web Server!" ); 
+	endif;
+
+   	RunApplication(SUPPORTDIR ^ "InstallUserRight.bat"," \"" + svWSCInstalldir + "\"", FALSE, TRUE,TRUE);
+   	
+   	nResult = RunApplication(SUPPORTDIR ^ "InstallGW.bat", "\"" + 
+							 svWSCSiteName + "\" \"" + 
+							 svWSCAppPool + "\" \"" + 
+							 svWSCVdir + "\" \"" + 
+							 svWSCInstalldir + "\" \"" + 
+							 svWSCDisableFolderList + "\"", 
+							 FALSE, TRUE, TRUE);
+
+	if( nResult != 0 ) then
+ 		nRet = -1;
+	endif;
+   	   
+    GetIIS78Configs();
+	
+	// Update the configuration setting file.
+	if (StrLength(webAPIServerUrl) > 0) then
+		RunApplication(SystemFolder ^ "cscript.exe"," \"" + 
+					   SUPPORTDIR ^ "replacefiletext.vbs\" \"" + 
+					   svWSCInstalldir ^ "js" ^ "configSettings.js\" \"" + 
+				       "/ServicesAPI/\" \"" + 
+				       webAPIServerUrl + "/ServicesAPI/\" \"" + 
+				       svWSCInstalldir ^ "js" ^ "configSettings.js\"", 
+				       FALSE, TRUE, TRUE); 
+	endif;
+	
+	RunApplication(SystemFolder ^ "cscript.exe", "\"" + 
+				   SUPPORTDIR ^ "portcheck.vbs" + "\" " + 
+				   rabbitMqLocalPort + " \"" + 
+				   SUPPORTDIR ^ "netstat.txt"+"\"", 
+				   FALSE, TRUE, TRUE );
+
+	WriteRegistryWebServer();
+
+	Enable (CANCELBUTTON);
+	WriteLogFile("Ending WebServer_Installed");	
+end;
+
+function WebServer_Uninstalling()
+	NUMBER nResult;
+begin  	
+	WriteLogFile("Entering WebServer_Uninstalling");	
+
+	Disable (CANCELBUTTON);
+
+	WriteLogFile("Uninstalling Web Server."); 
+
+	nResult = RunApplication(SUPPORTDIR ^ "UninstallGw.bat", "\"" + 
+							 svWSCSiteName + "\" \"" + svWSCAppPool + "\" \"" + svWSCVdir + "\"", 
+							 FALSE, TRUE, TRUE);
+
+	if (nResult != 0) then
+		WriteLogFile( "Uninstall Web Server error!" ); 
+	endif;
+
+	Enable (CANCELBUTTON);
+	WriteLogFile("Ending WebServer_Uninstalling");
+end;
+
+
+function WebServer_Uninstalled()
+begin
+    WriteLogFile("Starting WebServer_Uninstalled."); 
+    Disable (CANCELBUTTON);
+
+	DeleteFolder(svWSCInstalldir); 
+	RegDBDeleteKey("SOFTWARE\\NetBrain\\NetBrain Web Server");
+
+    Enable (CANCELBUTTON);
+    WriteLogFile("Ending WebServer_Uninstalled."); 
+end;

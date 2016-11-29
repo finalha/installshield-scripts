@@ -1,0 +1,504 @@
+prototype WriteLogFile( STRING );
+prototype DeleteLogFile(); 
+prototype RunApplication( STRING , STRING, BOOL, BOOL, BOOL); 
+prototype DeleteFolder(STRING);
+prototype getParentPath(STRING,BYREF STRING);
+prototype CheckPathSpecChar(STRING);
+prototype CheckPathSpecCharSlient(STRING);
+prototype AddOrReplaceLineOfFile( BOOL, STRING, STRING, STRING,STRING, STRING ) ;
+prototype FormatVer(STRING,BYREF STRING); 
+prototype STRING RecordTimeLog();
+prototype GetDefaultSiteIPPort();
+prototype STRING ReadString(STRING,STRING,BOOL);
+prototype NUMBER checkIPAddress(STRING);
+prototype CopyFileToDes(STRING,STRING);
+prototype SdMongoDB();
+prototype SdRabbitMQServers();
+
+function WriteLogFile( svContent )   
+ 	NUMBER   FileHandle;   
+	NUMBER   nResult;
+	STRING	 svResult;
+begin           
+	nResult = FindFile ( LOGFILE_PATH,  LOGFILE_NAME, svResult ); 
+	
+	OpenFileMode (FILE_MODE_APPEND);  
+	if( nResult < 0 ) then
+		nResult = CreateFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	else
+		nResult = OpenFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	endif;
+	
+	if( nResult < 0 ) then  
+		return -1;
+	endif; 
+ 
+	nResult = WriteLine(FileHandle,"");
+	nResult = WriteLine(FileHandle,RecordTimeLog());
+ 
+    nResult = WriteLine(FileHandle,svContent);     
+    CloseFile(FileHandle);    
+    return 0;
+end; 
+
+
+function DeleteLogFile() 
+	NUMBER nvRet;
+begin
+
+    nvRet = DeleteFile ( LOGFILE_PATH + LOGFILE_NAME );
+    if( nvRet = 0 || nvRet = ISERR_FILE_NOT_FOUND  ) then 
+    	return 0;
+    else 
+    	return -1;
+    endif;
+end;    
+
+function RunApplication( cmd , param, bShow, bWait,bShell )
+    number nShowWindow;
+    number nOptions;
+begin
+	LongPathToQuote( cmd, TRUE );
+	//LongPathToQuote( param, TRUE );
+	if( bShell = TRUE ) then 
+		param=param+" >> "+LOGFILE+" 2>>^&1";                 
+	endif;
+	nShowWindow = SW_NORMAL;
+	nOptions = LAAW_OPTION_CHANGEDIRECTORY | LAAW_OPTION_FIXUP_PROGRAM;
+	if( bShow = FALSE ) then 
+		nShowWindow = SW_HIDE; 
+		nOptions |= LAAW_OPTION_HIDDEN;
+	endif;     	
+	if( bWait = TRUE ) then 
+		nOptions |= LAAW_OPTION_WAIT; 
+	else                           
+		nOptions |= LAAW_OPTION_NOWAIT; 
+	endif;
+	
+	LaunchApplication( cmd, param, "", nShowWindow, INFINITE, nOptions  ); 
+	 WriteLogFile( LAAW_PARAMETERS.szCommandLineResult);
+	 WriteLogFile( LAAW_PARAMETERS.szStatusText );
+	
+	return LAAW_PARAMETERS.nLaunchResult;
+
+     
+	     
+end; 
+
+function DeleteFolder(szFolderPath)   
+NUMBER nResult;   
+STRING szFileName;    
+LIST listID;
+begin  
+	if (ExistsDir (szFolderPath)=EXISTS) then 
+	WriteLogFile("There exits dir:"+szFolderPath); 
+	    nResult=FindAllFiles(szFolderPath,"*.*",szFileName,RESET);
+        while(nResult = 0)
+	        SetFileInfo (szFileName ,FILE_ATTRIBUTE , FILE_ATTR_NORMAL ,"" );
+	        nResult=FindAllFiles(szFolderPath,"*.*",szFileName,CONTINUE); 
+        endwhile;               
+        
+        DeleteAgain:
+        if DeleteDir(szFolderPath, ROOT)<0 then 
+        	nResult=SdFilesInUse("","Can not delete the folder below. Maybe some files inside the folder are in use. Please check!",szFolderPath,listID);    
+        	if (nResult = IDRETRY) then
+       			goto DeleteAgain;   
+       		endif;
+        endif;
+        WriteLogFile("End delete folder"+szFolderPath); 
+    endif;		
+end; 
+
+function getParentPath(szPath,svParentPath) 
+LIST listID; 
+STRING svStr;
+NUMBER nResult;
+begin 
+   
+    StrRemoveLastSlash ( szPath );
+ 	listID = ListCreate (STRINGLIST); 
+ 	StrGetTokens ( listID , szPath , "\\" );  
+ 	ListSetIndex (listID, LISTLAST);   
+ 	ListDeleteString ( listID ); 
+ 	 	
+ 	ListGetFirstString(listID,svStr); 
+    svParentPath="";
+    while (nResult != END_OF_LIST) 
+    	svParentPath=svParentPath^svStr;
+    	nResult = ListGetNextString (listID, svStr);
+    endwhile;
+     	
+end; 
+
+function CheckPathSpecChar(spathtocheck)
+begin  
+	//return (1);
+	//#$%^&@~`!;',
+	if(StrFind (spathtocheck, "#")>-1 ||StrFind (spathtocheck, "$")>-1 ||StrFind (spathtocheck, "%")>-1 ||StrFind (spathtocheck, "^")>-1 ||StrFind (spathtocheck, "&")>-1 ||StrFind (spathtocheck, "@")>-1||StrFind (spathtocheck, "~")>-1||StrFind (spathtocheck, "`")>-1||StrFind (spathtocheck, "!")>-1||StrFind (spathtocheck, ";")>-1||StrFind (spathtocheck, "'")>-1||StrFind (spathtocheck, ",")>-1)  then
+		MessageBox("The Path can not include any of the following characters: #$%^&@~`!;', ", SEVERE);
+		return (0);                            
+	endif; 
+	return (1);
+end; 
+
+function AddOrReplaceLineOfFile( bIsUnicode, szPath, szFile, szKey,szKeyBefore, szContent )
+    STRING  svReturnLine, szMsg, szInsertLine;
+    NUMBER  nvLineNUMBER, nvResult,nvFileHandle,nvResultBefore;
+    NUMBER  nResult;
+begin
+	if( bIsUnicode ) then 
+		OpenFileMode(FILE_MODE_APPEND_UNICODE);
+	else
+    	OpenFileMode(FILE_MODE_APPEND);
+    endif;
+    OpenFile(nvFileHandle, szPath, szFile );
+    nvResult = FileGrep ( szPath + "\\" + szFile, szKey,svReturnLine, nvLineNUMBER, RESTART);
+    szInsertLine = szContent;
+    switch(nvResult)
+        case 0:
+            FileInsertLine (szPath + "\\" + szFile,szInsertLine,nvLineNUMBER, REPLACE);
+            CloseFile(nvFileHandle);
+            return 0; 
+        case END_OF_FILE:
+        	 nvResultBefore = FileGrep ( szPath + "\\" + szFile, szKeyBefore,svReturnLine, nvLineNUMBER, RESTART);
+             switch(nvResultBefore)
+             	case 0:
+            		FileInsertLine (szPath + "\\" + szFile,szInsertLine,nvLineNUMBER, BEFORE);
+            		CloseFile(nvFileHandle);
+            		return 0;
+		        case FILE_NOT_FOUND:   
+		        	WriteLogFile(  "ReplaceLineOfFile:" + szFile + " not found." );
+		        case FILE_LINE_LENGTH:
+					WriteLogFile(  "ReplaceLineOfFile:" + szFile + " lines too long." );
+		        case OTHER_FAILURE:                               
+		            WriteLogFile(  "ReplaceLineOfFile:" + szFile + " Unknown failure on call to FileGrep." );
+		    endswitch;
+        case FILE_NOT_FOUND:   
+        	WriteLogFile(  "ReplaceLineOfFile:" + szFile + " not found." );
+        case FILE_LINE_LENGTH:
+            // Report error; then abort.
+			WriteLogFile(  "ReplaceLineOfFile:" + szFile + " lines too long." );
+        case OTHER_FAILURE:
+            // Report error; then abort.                               
+            WriteLogFile(  "ReplaceLineOfFile:" + szFile + " Unknown failure on call to FileGrep." );
+    endswitch;
+        
+    CloseFile(nvFileHandle);
+    return 1;
+end;
+function FormatVer(szVer,svVer) 
+	LIST   listID;  
+	NUMBER nvNum,iCount; 
+	NUMBER nvReturn;
+begin	
+	listID = ListCreate (STRINGLIST);
+	if (listID = LIST_NULL) then 
+		return -1;
+	endif; 
+	
+	nvReturn = StrGetTokens (listID, szVer, ".");
+	
+	if ( nvReturn = 0 ) then   
+		nvNum = ListCount (listID);
+		ListSetIndex (listID, LISTLAST);
+		 
+		for iCount = nvNum to 4-1  
+			ListAddString (listID,"0",AFTER); 
+		endfor;  
+		
+		nvReturn = StrPutTokens (listID,svVer,".",FALSE);
+	endif;
+	
+	ListDestroy (listID);
+    
+    return nvReturn;
+    	
+end;  
+function STRING RecordTimeLog()
+	number  nvReturn1;
+	string  svResult1,szDateTimetmp;
+begin   	
+	   	GetSystemInfo( DATE, nvReturn1, svResult1 );  
+   		szDateTimetmp = svResult1;
+   		szDateTimetmp = szDateTimetmp + " ";
+   		GetSystemInfo( TIME, nvReturn1, svResult1 );
+   		szDateTimetmp = szDateTimetmp + svResult1; 
+   		return szDateTimetmp;
+   		//WriteLogFile(szDateTimetmp);     		
+end;
+
+function GetDefaultSiteIPPort()  
+STRING szDefaultSite;
+int nindex,nindex1; 
+begin
+	DeleteFile(SUPPORTDIR ^"defaultsiteipport.txt");
+	RunApplication(SUPPORTDIR ^"getdefaultsiteipport.bat",SUPPORTDIR ^"defaultsiteipport.txt",FALSE,TRUE,TRUE);
+	szDefaultSite = ReadString(SUPPORTDIR,"defaultsiteipport.txt",FALSE);
+	StrTrim (szDefaultSite);	  
+	nindex = StrFind( szDefaultSite,"\r\n");
+	if(nindex>-1)then	
+		StrSub(szDefaultSite,szDefaultSite,nindex+2,StrLength(szDefaultSite));
+		StrTrim (szDefaultSite);
+	else
+		return 0; 
+	endif;
+	nindex = StrFind( szDefaultSite,"\r\n");
+	if(nindex>-1)then
+		StrSub(szDefaultSite,szDefaultSite,0,nindex); 
+		StrTrim (szDefaultSite);
+	else
+		return 0;
+	endif;  
+	//ip
+	nindex = StrFind(szDefaultSite,":");	 
+	nindex1 = StrFindEx(szDefaultSite,":",nindex+1);
+	if(nindex>5)&&(nindex1>0)then
+		StrSub(svDefaultSiteIP,szDefaultSite,1,nindex-1);	
+	endif; 
+	//port
+	if(nindex1<0)||(nindex<0)then
+		return 0;
+	else 
+		StrSub(svDefaultSitePort,szDefaultSite,nindex+1,nindex1-nindex-1);	
+	endif;
+end; 
+
+function STRING ReadString(sStringDir ,sStringFile,bonlyline) 
+	STRING  svLine;
+	STRING  svResult;   
+    NUMBER   nFileHandle;  
+    NUMBER   nResult;    
+    NUMBER   nvResult;  
+begin           
+	nResult = FindFile ( sStringDir,  sStringFile, svResult ); 
+	if(0>nResult) then
+		return "";
+	endif;
+	if (bonlyline==TRUE) then 
+		OpenFileMode (FILE_MODE_NORMAL);    
+	else
+		OpenFileMode (FILE_MODE_BINARYREADONLY);
+	endif;
+	if(0>OpenFile(nFileHandle,sStringDir,sStringFile)) then
+		return "";                                                   		
+	endif;     
+	if (bonlyline==TRUE) then  
+	    if (GetLine (nFileHandle, svLine) != 0)  then 
+            svLine= "";    
+        endif;
+    else  
+    	GetFileInfo ( sStringDir + sStringFile, FILE_SIZE, nvResult, svResult ); 
+    	if (ReadBytes (nFileHandle, svLine, 0, nvResult) < 0) then 
+        	svLine= "";
+    	endif;
+	endif;    
+    CloseFile (nFileHandle);    
+    return svLine;
+end; 
+
+function NUMBER checkIPAddress( svIP )
+ NUMBER n;
+ begin
+ RegDBDisConnectRegistry( 0 ); // in case it's already open
+ n = RegDBConnectRegistry ( svIP, HKEY_LOCAL_MACHINE, 0 );
+ RegDBDisConnectRegistry( 0 );
+ return n;
+ end; 
+ 
+function CopyFileToDes(szSourcefile,szDestfile)
+    NUMBER nResult; 
+begin 
+	Disable(LOGGING);
+    WriteLogFile ("Copy "+szSourcefile+" to "+szDestfile);
+    
+    nResult = CopyFile(szSourcefile, szDestfile); 
+    
+    // Report the results of the copy operation. 
+    switch (nResult) 
+        case 0: 
+            WriteLogFile ("Files successfully copied."); 
+        case COPY_ERR_CREATEDIR: 
+            WriteLogFile ("A target directory could not be created."); 
+        case COPY_ERR_MEMORY: 
+            WriteLogFile ("Insufficient memory."); 
+        case COPY_ERR_NODISKSPACE: 
+            WriteLogFile ("Insufficint disk space.");
+        case COPY_ERR_OPENINPUT: 
+            WriteLogFile ("Unable to open the input files in "+ szSourcefile); 
+        case COPY_ERR_OPENOUTPUT: 
+            WriteLogFile ("Unable to copy the source files."); 
+        case COPY_ERR_TARGETREADONLY: 
+            WriteLogFile ("A target file already exists and cannot be overwritten."); 
+        default:
+            WriteLogFile ("An unspecified error occurred. "+FormatMessage(nResult)); 
+    endswitch;  
+    Enable(LOGGING);
+end; 
+
+// SdMongoDB -------------------------------------------------------------
+function  SdMongoDB()
+    string  szDlg;
+    number  nId;
+    HWND    hwndDlg;
+    BOOL    bDone;
+    LIST   servers;
+begin
+
+    szDlg = "SdMongoDB";
+
+    // ensure general initialization is complete
+    if ( !bSdInit ) then
+        SdInit( );
+    endif;
+
+    if (EzDefineDialog( szDlg, ISUSER, szDlg, 0 ) = DLG_ERR) then
+	        return -1;
+    endif;
+
+    // Loop in dialog until the user selects a standard button
+    bDone = FALSE;
+
+    while (!bDone)
+
+        nId = WaitOnDialog( szDlg );
+ 
+        switch (nId)
+    
+        case DLG_INIT:
+            hwndDlg = CmdGetHwndDlg( szDlg );
+            SdGeneralInit( szDlg, hwndDlg, STYLE_BOLD, szSdProduct );
+
+			CtrlSetMLEText( szDlg, 1315, listServers );
+			CtrlSetText( szDlg, 1310, replicaSetName );
+			CtrlSetText( szDlg, 1311, mongodbusername );
+			CtrlSetText( szDlg, 1312, mongodbpassword );
+			CtrlSetState( szDlg, 1313, mongodbssl );
+
+        case SD_PBUT_OK:
+
+            nId   = OK;
+            bDone = TRUE;
+
+        case BACK:
+            nId    = BACK;
+            bDone  = TRUE;
+
+        case DLG_ERR:
+            SdError( -1, szDlg );
+            nId   = -1;
+            bDone = TRUE;
+
+        case DLG_CLOSE:
+
+            SdCloseDlg( hwndDlg, nId, bDone );
+
+        default:
+            // check standard handling
+            if(SdIsStdButton( nId ) && SdDoStdButton( nId )) then
+                bDone = TRUE;
+            endif;
+     
+        endswitch;
+
+    endwhile;
+
+	CtrlGetText( szDlg, 1310, replicaSetName );
+	CtrlGetText( szDlg, 1311, mongodbusername );
+	CtrlGetText( szDlg, 1312, mongodbpassword );
+	mongodbssl = CtrlGetState(szDlg, 1313);
+	ListDeleteAll(listServers);
+	CtrlGetMLEText (szDlg, 1315, listServers);
+
+    EndDialog( szDlg );
+    ReleaseDialog( szDlg );
+    SdUnInit();
+
+    return nId;
+
+end; 
+
+// SdRabbitMQServers -------------------------------------------------------------
+function  SdRabbitMQServers()
+    string  szDlg;
+    number  nId;
+    HWND    hwndDlg;
+    BOOL    bDone;
+    //LIST   servers;
+begin
+
+    szDlg = "SdRabbitMQServers";
+
+    // ensure general initialization is complete
+    if ( !bSdInit ) then
+        SdInit( );
+    endif;
+
+    if (EzDefineDialog( szDlg, ISUSER, szDlg, 0 ) = DLG_ERR) then
+	        return -1;
+    endif;
+
+    // Loop in dialog until the user selects a standard button
+    bDone = FALSE;
+
+    while (!bDone)
+
+        nId = WaitOnDialog( szDlg );
+ 
+        switch (nId)
+    
+        case DLG_INIT:
+            hwndDlg = CmdGetHwndDlg( szDlg );
+            SdGeneralInit( szDlg, hwndDlg, STYLE_BOLD, szSdProduct );
+
+			CtrlSetMLEText( szDlg, 1333, listRabbitMQServers );
+
+
+        case SD_PBUT_OK:
+
+            nId   = OK;
+            bDone = TRUE;
+
+        case BACK:
+            nId    = BACK;
+            bDone  = TRUE;
+
+        case DLG_ERR:
+            SdError( -1, szDlg );
+            nId   = -1;
+            bDone = TRUE;
+
+        case DLG_CLOSE:
+
+            SdCloseDlg( hwndDlg, nId, bDone );
+
+        default:
+            // check standard handling
+            if(SdIsStdButton( nId ) && SdDoStdButton( nId )) then
+                bDone = TRUE;
+            endif;
+     
+        endswitch;
+
+    endwhile;
+
+	ListDeleteAll(listRabbitMQServers);
+	CtrlGetMLEText (szDlg, 1333, listRabbitMQServers);
+
+    EndDialog( szDlg );
+    ReleaseDialog( szDlg );
+    SdUnInit();
+
+    return nId;
+
+end;
+
+function CheckPathSpecCharSlient(spathtocheck)
+begin  
+	//return (1);
+	//#$%^&@~`!;',
+	if(StrFind (spathtocheck, "#")>-1 ||StrFind (spathtocheck, "$")>-1 ||StrFind (spathtocheck, "%")>-1 ||StrFind (spathtocheck, "^")>-1 ||StrFind (spathtocheck, "&")>-1 ||StrFind (spathtocheck, "@")>-1||StrFind (spathtocheck, "~")>-1||StrFind (spathtocheck, "`")>-1||StrFind (spathtocheck, "!")>-1||StrFind (spathtocheck, ";")>-1||StrFind (spathtocheck, "'")>-1||StrFind (spathtocheck, ",")>-1)  then
+		//MessageBox("The Path can not include any of the following characters: #$%^&@~`!;', ", SEVERE);
+		return (0);                            
+	endif; 
+	return (1);
+end; 

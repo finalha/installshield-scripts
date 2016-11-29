@@ -1,0 +1,348 @@
+#include "common.rul"
+//---------------------------------------------------------------------------
+// The Installing event is sent before the feature RM
+// is installed.
+//---------------------------------------------------------------------------
+export prototype RM_Installing();
+function RM_Installing()
+begin
+    SetStatusWindow (30, "Init log folder");
+	RunApplication(SUPPORTDIR^"mknetbrain.bat","\""+SETUPTYPE+"\"", FALSE,TRUE,TRUE );
+	WriteLogFile("Setup RM_Installing");
+	SetStatusWindow (40, "Uninstall Old services");  
+	writeinfouninstall();
+	DoUninstallRMServices(); 
+	SetStatusWindow (50, "Delete old files"); 
+    DeleteFolder(INSTALLDIR^"bin");
+end;
+
+//---------------------------------------------------------------------------
+// The Installed event is sent after the feature RM
+// is installed.
+//---------------------------------------------------------------------------
+export prototype RM_Installed();
+function RM_Installed()
+STRING svStr,svSetupPath,svReturnLine; 
+number nvLineNumber,nvServiceState;
+begin
+	//config ini
+	WriteLogFile("Setup RM_Installed");
+   	//config ini
+   	//copy cacert.pem to conf folder of Worker Server
+   	CopyFileToDes(rabbitMqCertCaPath,svRMInstalldir^"conf"^"cacert.pem");	
+   	//install and start service
+    SetStatusWindow (60, "Install Services for NetBrain Worker Server");
+   	DoInstallRMServices();
+   	SetStatusWindow (70, "Start Services for NetBrain Worker Server");
+   	//install and start service  
+	WriteInfo();
+    WriteRegistryRM();
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalling event is sent just before the feature 
+// RM is uninstalled.
+//---------------------------------------------------------------------------
+export prototype RM_UnInstalling();
+function RM_UnInstalling()
+begin
+	WriteLogFile("Setup RM_UnInstalling"); 
+	DoUninstallRMServices();
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalled event is sent after the feature RM
+// is uninstalled.
+//---------------------------------------------------------------------------
+export prototype RM_UnInstalled();
+function RM_UnInstalled()
+begin
+	WriteLogFile("Setup RM_UnInstalled");   
+	writeinfouninstall();
+	RegDBDeleteKey("SOFTWARE\\NetBrain\\NetBrain Worker Server");
+	//DeleteDir ( INSTALLDIR^"Worker Server" , ROOT );
+	DeleteFolder( INSTALLDIR^"Worker Server");
+end;
+
+export prototype RabbitMQ_Installing();
+function RabbitMQ_Installing()
+STRING szTitle, szMsg, szField1, svEdit1,szInfo;
+LIST listInfo;
+number nResult;
+begin
+   WriteLogFile("Setup RabbitMQ_Installing"); 
+   nResult=RunApplication(SUPPORTDIR ^ ERLANG_EXE,"/S", FALSE, TRUE,TRUE);
+    if (nResult!=0) then 
+        WriteLogFile( MSG_ERR_INSTALL_ERLANG );
+    	MessageBox(MSG_ERR_INSTALL_ERLANG,WARNING);
+    	abort;
+    else
+    RegDBSetDefaultRoot ( HKEY_LOCAL_MACHINE );  
+	if (RegDBKeyExist ("SOFTWARE\\Ericsson\\Erlang" ) < 0 ) then  
+	    WriteLogFile( MSG_ERR_REG_ERLANG );
+    	MessageBox(MSG_ERR_REG_ERLANG,WARNING);
+    	abort;
+	endif;
+    WriteLogFile( MSG_INFO_INSTALL_ERLANG );          
+    endif;
+    SetStatusWindow (5, "Install ERLANG in slience mode");
+    //add environment variable "ERLANG_HOME"         
+    RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE);
+    RegDBSetKeyValueEx ("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" , "ERLANG_HOME" , REGDB_STRING_EXPAND , PROGRAMFILES64^"erl"+ERLANG_VERSION , -1);     
+    //modify .erlang.cookie not read-only,customer input the content from the front page,copy C:\Users\Administrator\.erlang.cookie to C:\Windows\.erlang.cookie 
+    SetFileInfo (COOKIEFILE,FILE_ATTRIBUTE , FILE_ATTR_NORMAL ,"" );
+    /*
+    szTitle  = "Resource Manager Cluster ID";
+    szMsg    = "Please enter the string ID of the Resource Manager Cluster which the Resource Manager instance will be part of. All the Resource Manager instances in a cluster have the same cluster ID, which will be used as the Erlang cookie value.";
+    szField1 = "Resource Manager Cluster ID:";
+    svEdit1  = "";
+    inputcookie:
+    Disable (BACKBUTTON);
+    if (SdShowDlgEdit1 (szTitle, szMsg, szField1, svEdit1) < 0) then
+      // Report an error.
+      MessageBox ("Failed to create cookie of erlang.", SEVERE);
+   else
+      // Display svEdit1 string variable.
+      //SprintfBox (INFORMATION, szTitle, "You selected %s", svEdit1);
+      WriteLogFile("The string of erlang is:"+svEdit1);
+      StrTrim(svEdit1);
+      if (StrCompare ("", svEdit1)=0) then 
+      MessageBox ("Cookie of erlang can not be empty.", SEVERE);
+      goto inputcookie;
+      endif;
+      WriteCookieFile(svEdit1);      
+   endif;
+   */
+     WriteCookieFile(rabbitMqClusterId);
+     //delete first
+     DeleteFile("C:\\Windows"^COOKIEFILE_NAME);
+     CopyFileToDes(COOKIEFILE,"C:\\Windows"^COOKIEFILE_NAME);
+     /*
+     Disable (BACKBUTTON);     
+     listInfo = ListCreate (STRINGLIST);
+     szInfo = "Install path:"+INSTALLDIR;
+     ListAddString (listInfo, szInfo, AFTER);
+     szInfo = "Erlang version:"+ERLANG_VERSION;
+     ListAddString (listInfo, szInfo, AFTER);
+     szInfo = "RabbitMQ version:"+RabbitMQ_VERSION;
+     ListAddString (listInfo, szInfo, AFTER);
+ 	 szTitle = "Ready to install NetBrain Worker Server";
+     szMsg   = "Review the following information about RabbitMQ configuration before clicking Install to start copying files.";
+     nResult=SdShowInfoList (szTitle, szMsg, listInfo);  
+     if (nResult = BACK) then
+   		goto inputcookie;  
+     endif;
+     Enable (BACKBUTTON);
+     */
+     SetStatusExStaticText(INSTALLSTATUS);
+     Enable(STATUSEX);    
+end;
+
+export prototype RabbitMQ_Installed();
+function RabbitMQ_Installed()
+begin
+   WriteLogFile("Setup RabbitMQ_Installed"); 
+   //install and start service
+   SetStatusWindow (10, "Install Services for RabbitMQ");
+   DoInstallRabbitMQServices();
+   SetStatusWindow (20, "Start Services for RabbitMQ");
+   	//install and start service  
+    WriteRegistryRabbitMQ();
+end;
+
+export prototype RabbitMQ_UnInstalling();
+function RabbitMQ_UnInstalling()
+begin
+  WriteLogFile("Setup RabbitMQ_UnInstalling"); 
+  DoUninstallRabbitMQServices();
+end;
+
+export prototype RabbitMQ_UnInstalled();
+function RabbitMQ_UnInstalled()
+begin
+    WriteLogFile("Setup RabbitMQ_UnInstalled"); 
+    RegDBDeleteKey("SOFTWARE\\NetBrain\\NetBrain RabbitMQ");
+  	//DeleteDir ( INSTALLDIR^"RabbitMQ" , ROOT );
+  	//DeleteDir ( AppDataFolder^"RabbitMQ" , ROOT );
+  	DeleteFolder( INSTALLDIR^"RabbitMQ");
+  	DeleteFolder( AppDataFolder^"RabbitMQ");
+end;
+
+export prototype Redis_Installing();
+function Redis_Installing()
+STRING svMsiexec, svParam, svMsiSourcePackage,svMisDestPackage;
+begin
+  WriteLogFile("Setup Redis_Installing"); 
+  //CopyFileToDes(SUPPORTDIR^"Redis-x64-2.8.2103.msi",TempFolder^"Redis-x64-2.8.2103.msi");
+  //nResult = RunApplication(TempFolder ^ "Redis-x64-2.8.2103.msi","/qn",FALSE,TRUE,TRUE );
+  //nResult = LaunchAppAndWait(TempFolder^"Redis-x64-2.8.2103.msi","/qn /L*v c:\Redis_Install.log",WAIT|LAAW_OPTION_HIDDEN);			
+    svMsiexec = WINSYSDIR ^ "msiexec.exe";   
+    svMsiSourcePackage = SUPPORTDIR ^ REDIS_MSI; 
+    svMisDestPackage = TempFolder^REDIS_MSI;
+    CopyFileToDes(svMsiSourcePackage,svMisDestPackage);
+    LongPathToQuote ( svMisDestPackage, TRUE ); 
+    svParam = "/i " + svMisDestPackage + " /qn /L*v c:\Redis_Install.log"; 
+    nResult=LaunchAppAndWait(svMsiexec, svParam, WAIT|LAAW_OPTION_HIDDEN);
+  if (nResult!=0) then
+  WriteLogFile("Fail to install Redis");
+  else 
+  WriteLogFile("Succeed to install Redis");
+  endif;
+end;
+
+export prototype Redis_Installed();
+function Redis_Installed()
+begin
+    WriteLogFile("Setup Redis_Installed"); 
+    nResult = RunApplication(SUPPORTDIR ^ "Redis_config.bat","\"" + svRedisInstalldir+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   	WriteLogFile("Fail to modify redis.windows-service.conf");
+    else 
+    WriteLogFile("Succeed to modify redis.windows-service.conf");
+   	endif;
+end;
+
+export prototype Redis_UnInstalling();
+function Redis_UnInstalling()
+begin
+  WriteLogFile("Setup Redis_UnInstalling");  
+    nResult = RunApplication(SUPPORTDIR ^ "uninstallRedis.bat",TempFolder+" "+REDIS_MSI,FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   	WriteLogFile("Fail to uninstall Redis");
+    else 
+    WriteLogFile("Succeed to uninstall Redis");
+   	endif;
+end;
+
+export prototype Redis_UnInstalled();
+function Redis_UnInstalled()
+begin
+  WriteLogFile("Setup Redis_UnInstalled"); 
+end;
+
+export prototype WS_Installed();
+function WS_Installed()
+begin  
+    WriteLogFile("Setup WS_Installed");	
+    //nResult = LaunchAppAndWait (INSTALLDIR^"Worker Server"^"SetupFiles\\WSsetup.exe", "", WAIT);
+    nResult = LaunchAppAndWait (INSTALLDIR^"SetupFiles\\WSsetup.exe", "", WAIT);
+    if (nResult!=0) then
+   	WriteLogFile("Fail to install Web Server");
+    else 
+    WriteLogFile("Succeed to install Web Server");
+   	endif;
+
+end;
+
+export prototype WS_UnInstalled();
+function WS_UnInstalled()
+begin  
+    WriteLogFile("Setup WS_UnInstalled");
+    //fix ENG-12696 begin
+    if (Is(FILE_EXISTS, AppDataFolder^"InstallShield Installation Information"^WSPRODUCTCODE^"setup.exe") = TRUE) then
+    nResult = LaunchAppAndWait (AppDataFolder^"InstallShield Installation Information"^WSPRODUCTCODE^"setup.exe", "-runfromtemp -removeonly", WAIT);
+    WriteLogFile("Setup WS_UnInstalled using"+AppDataFolder^"InstallShield Installation Information"^WSPRODUCTCODE^"setup.exe");
+    else
+    nResult = LaunchAppAndWait (ProgramFilesFolder^"InstallShield Installation Information"^WSPRODUCTCODE^"setup.exe", "-runfromtemp -removeonly", WAIT);
+    WriteLogFile("Setup WS_UnInstalled using"+ProgramFilesFolder^"InstallShield Installation Information"^WSPRODUCTCODE^"setup.exe");
+    endif;
+    //fix ENG-12696 end 
+    if (nResult!=0) then
+   	WriteLogFile("Fail to uninstall Web Server");
+    else 
+    WriteLogFile("Succeed to uninstall Web Server");
+   	endif;
+
+end;
+
+export prototype Mongodbinit_Installing();
+STRING svMsiexec, svParam, svMsiSourcePackage,svMisDestPackage;
+function Mongodbinit_Installing()
+begin
+WriteLogFile("Setup Mongodbinit_Installing");
+    svMsiexec = WINSYSDIR ^ "msiexec.exe";   
+    svMsiSourcePackage = SUPPORTDIR ^ "python-3.4.3.amd64.msi"; 
+    svMisDestPackage = TempFolder^"python-3.4.3.amd64.msi";
+    CopyFileToDes(svMsiSourcePackage,svMisDestPackage);
+    LongPathToQuote ( svMisDestPackage, TRUE ); 
+    svParam = "/i " + svMisDestPackage + " /qn /L*v c:\Python_Install.log"; 
+    nResult=LaunchAppAndWait(svMsiexec, svParam, WAIT|LAAW_OPTION_HIDDEN);
+   //nResult=LaunchAppAndWait(TempFolder^"python-3.4.3.amd64.msi","/qn /L*v c:\Python_Install.log",WAIT|LAAW_OPTION_HIDDEN);
+   //nResult=RunApplication(SUPPORTDIR ^ "python-3.4.3.amd64.msi","/qn", FALSE, TRUE,TRUE);
+    if (nResult!=0) then 
+        WriteLogFile(MSG_ERR_INSTALL_PYTHON );
+    	MessageBox(MSG_ERR_INSTALL_PYTHON,WARNING);
+    	abort;
+    endif;
+    //copy msvcr100 to system folder
+    CopyFileToDes(PYHTON_PATH^"msvcr100.dll","C:\\Windows\\System32\\msvcr100.dll");
+    svMsiSourcePackage = SUPPORTDIR ^ "pymongo-3.0.2.win-amd64-py3.4.exe"; 
+    svMisDestPackage = TempFolder^"pymongo-3.0.2.win-amd64-py3.4.exe";
+    CopyFileToDes(svMsiSourcePackage,svMisDestPackage);
+    LongPathToQuote ( svMisDestPackage, TRUE ); 
+    nResult=LaunchAppAndWait(svMisDestPackage,"",WAIT|LAAW_OPTION_HIDDEN);
+    //svParam = "/i " + svMsiPackage + " /qn /L*v c:\Pymongo_Install.log";
+    //CopyFileToDes(svMsiPackage,TempFolder^"pymongo-3.0.2.win-amd64-py3.4.exe");
+    //nResult=LaunchAppAndWait(svMsiexec,svParam,WAIT|LAAW_OPTION_HIDDEN);
+    //nResult=RunApplication(SUPPORTDIR ^ "pymongo-3.0.2.win-amd64-py3.4.exe","", FALSE, TRUE,TRUE);
+    if (nResult!=0) then 
+        WriteLogFile( MSG_ERR_INSTALL_PYMONGO );
+    	MessageBox(MSG_ERR_INSTALL_PYMONGO,WARNING);
+    	abort;
+    endif;
+end;
+
+export prototype Mongodbinit_Installed();
+STRING pathvalue;
+STRING svlisttitle,svlistmsg,svtxtpath,svtxtname;
+NUMBER nvSize,nvType;
+function Mongodbinit_Installed()
+begin
+    nvType=REGDB_STRING_EXPAND;
+    WriteLogFile("Setup Mongodbinit_Installed");
+//add "C:\\Python34" to environment variable "PATH"
+    Disable(LOGGING);
+    RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE);
+    RegDBGetKeyValueEx ("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" , "PATH" , nvType , pathvalue, nvSize); 
+    pathvalue=pathvalue+";C:\\Python34;C:\\Python34\\python.exe";
+    RegDBSetKeyValueEx ("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" , "PATH" , nvType , pathvalue, -1);   
+    Enable(LOGGING);
+    if (nvInitialize) then 
+    nResult = RunApplication(SUPPORTDIR ^ "Mongodb_init.bat","\"" + svMongodbinitInstalldir+"\""+" \"" + svMongodbprimaryIP+"\""+" \"" + svMongodbprimaryPort+"\""+" \"" + replicaSetName+"\""+" \"" + mongodbsslstr+"\"",FALSE,TRUE,TRUE );
+    //if (nResult!=0) then
+    //edit by liuyang 2016.8.24 show mongodb init error page begin
+    if (Is(FILE_EXISTS, svMongodbinitInstalldir^"error.log") = TRUE) then
+   		WriteLogFile("Fail to init data of Mongodb"); 
+   		svlisttitle="Mongodb init error";
+   		svlistmsg="The following is the error information: ";
+   		svtxtpath=svMongodbinitInstalldir;
+   		svtxtname="error.log";
+   		ShowListContentFromTxt(svlisttitle,svlistmsg,listMongodbiniterror,svtxtpath,svtxtname);
+	//edit by liuyang 2016.8.24 show mongodb init error page end
+   	else       		
+    	WriteLogFile("Success to init data of Mongodb");
+    endif;
+    else 
+    //nResult = RunApplication(SUPPORTDIR ^ "Mongodb_init.bat","\"" + svMongodbinitInstalldir+"\""+" \"" + svmongodbip+"\""+" \"" + svmongodbport+"\"",FALSE,TRUE,TRUE );
+    nResult1 = 0;
+    if (nResult1!=0) then
+   		WriteLogFile("Fail to upgrade data of Mongodb"); 
+   	else       		
+    	WriteLogFile("Success to upgrade data of Mongodb");
+    endif;
+    endif;        
+    //WriteRegistryMongoPy();
+end;
+
+export prototype Mongodbinit_UnInstalling();
+function Mongodbinit_UnInstalling()
+begin
+end;
+
+export prototype Mongodbinit_UnInstalled();
+function Mongodbinit_UnInstalled()
+begin
+WriteLogFile("Setup Mongodbinit_UnInstalled");
+DeleteFolder( svMongodbinitInstalldir);
+end;
+

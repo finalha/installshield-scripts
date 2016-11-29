@@ -1,0 +1,105 @@
+#include "common.rul"
+export prototype RabbitMQ_Installing();
+function RabbitMQ_Installing()
+STRING szTitle, szMsg, szField1, svEdit1,szInfo;
+LIST listInfo;
+number nResult;
+begin
+   WriteLogFile("Setup RabbitMQ_Installing"); 
+   nResult=RunApplication(SUPPORTDIR ^ ERLANG_EXE,"/S", FALSE, TRUE,TRUE);
+    if (nResult!=0) then 
+        WriteLogFile( MSG_ERR_INSTALL_ERLANG );
+    	MessageBox(MSG_ERR_INSTALL_ERLANG,WARNING);
+    	abort;
+    else
+    RegDBSetDefaultRoot ( HKEY_LOCAL_MACHINE );  
+	if (RegDBKeyExist ("SOFTWARE\\Ericsson\\Erlang" ) < 0 ) then  
+	    WriteLogFile( MSG_ERR_REG_ERLANG );
+    	MessageBox(MSG_ERR_REG_ERLANG,WARNING);
+    	abort;
+	endif;
+    WriteLogFile( MSG_INFO_INSTALL_ERLANG );          
+    endif;
+    SetStatusWindow (5, "Install ERLANG in slience mode");
+    //add environment variable "ERLANG_HOME"         
+    RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE);
+    RegDBSetKeyValueEx ("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" , "ERLANG_HOME" , REGDB_STRING_EXPAND , PROGRAMFILES64^"erl"+ERLANG_VERSION , -1);     
+    //modify .erlang.cookie not read-only,customer input the content from the front page,copy C:\Users\Administrator\.erlang.cookie to C:\Windows\.erlang.cookie 
+    SetFileInfo (COOKIEFILE,FILE_ATTRIBUTE , FILE_ATTR_NORMAL ,"" );
+    /*
+    szTitle  = "Resource Manager Cluster ID";
+    szMsg    = "Please enter the string ID of the Resource Manager Cluster which the Resource Manager instance will be part of. All the Resource Manager instances in a cluster have the same cluster ID, which will be used as the Erlang cookie value.";
+    szField1 = "Resource Manager Cluster ID:";
+    svEdit1  = "";
+    inputcookie:
+    Disable (BACKBUTTON);
+    if (SdShowDlgEdit1 (szTitle, szMsg, szField1, svEdit1) < 0) then
+      // Report an error.
+      MessageBox ("Failed to create cookie of erlang.", SEVERE);
+   else
+      // Display svEdit1 string variable.
+      //SprintfBox (INFORMATION, szTitle, "You selected %s", svEdit1);
+      WriteLogFile("The string of erlang is:"+svEdit1);
+      StrTrim(svEdit1);
+      if (StrCompare ("", svEdit1)=0) then 
+      MessageBox ("Cookie of erlang can not be empty.", SEVERE);
+      goto inputcookie;
+      endif;
+      WriteCookieFile(svEdit1);      
+   endif;
+   */
+     WriteCookieFile(rabbitMqClusterId);
+     //delete first
+     DeleteFile("C:\\Windows"^COOKIEFILE_NAME);
+     CopyFileToDes(COOKIEFILE,"C:\\Windows"^COOKIEFILE_NAME);
+     /*
+     Disable (BACKBUTTON);     
+     listInfo = ListCreate (STRINGLIST);
+     szInfo = "Install path:"+INSTALLDIR;
+     ListAddString (listInfo, szInfo, AFTER);
+     szInfo = "Erlang version:"+ERLANG_VERSION;
+     ListAddString (listInfo, szInfo, AFTER);
+     szInfo = "RabbitMQ version:"+RabbitMQ_VERSION;
+     ListAddString (listInfo, szInfo, AFTER);
+ 	 szTitle = "Ready to install NetBrain Worker Server";
+     szMsg   = "Review the following information about RabbitMQ configuration before clicking Install to start copying files.";
+     nResult=SdShowInfoList (szTitle, szMsg, listInfo);  
+     if (nResult = BACK) then
+   		goto inputcookie;  
+     endif;
+     Enable (BACKBUTTON);
+     */
+     SetStatusExStaticText(INSTALLSTATUS);
+     Enable(STATUSEX);    
+end;
+
+export prototype RabbitMQ_Installed();
+function RabbitMQ_Installed()
+begin
+   WriteLogFile("Setup RabbitMQ_Installed"); 
+   //install and start service
+   SetStatusWindow (10, "Install Services for RabbitMQ");
+   DoInstallRabbitMQServices();
+   SetStatusWindow (20, "Start Services for RabbitMQ");
+   	//install and start service  
+    WriteRegistryRabbitMQ();
+end;
+
+export prototype RabbitMQ_UnInstalling();
+function RabbitMQ_UnInstalling()
+begin
+  WriteLogFile("Setup RabbitMQ_UnInstalling"); 
+  DoUninstallRabbitMQServices();
+end;
+
+export prototype RabbitMQ_UnInstalled();
+function RabbitMQ_UnInstalled()
+begin
+    WriteLogFile("Setup RabbitMQ_UnInstalled"); 
+    //RegDBDeleteKey("SOFTWARE\\NetBrain\\NetBrain RabbitMQ");
+  	//DeleteDir ( INSTALLDIR^"RabbitMQ" , ROOT );
+  	//DeleteDir ( AppDataFolder^"RabbitMQ" , ROOT );
+  	DeleteFolder( INSTALLDIR^"RabbitMQ");
+  	DeleteFolder( AppDataFolder^"RabbitMQ");
+  	DeleteRegistryRabbitMQ();
+end;

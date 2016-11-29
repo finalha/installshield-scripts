@@ -1,0 +1,714 @@
+//===========================================================================
+//
+//  File Name:    Setup.rul
+//
+//  Description:  Blank setup main script file
+//
+//  Comments:     Blank setup is an empty setup project. If you want to
+//				  create a new project via. step-by step instructions use the
+//				  Project Assistant.
+//
+//===========================================================================
+
+// Included header files ----------------------------------------------------
+#include "ifx.h"
+
+#define SETUPTYPE "ProxyServer" 
+ 
+#define VIEWVERSION "7.0"
+
+#define AUTOUPDATESERVICENAME "UpdateSlaveService"
+
+#define DLLNAME SUPPORTDIR^"WriteVersion.dll"  
+
+#define MSG_ERR_PGINFO_PORT_INVALID	"The port: %s is in use, please enter another!"
+
+#define MSG_ERR_IPWORKS_INSTALL "IPWorks can not install successfully,the installer will abort"
+
+#define MSG_OK_CHECK_SYSTEM  "Succeed to check operation system and IIS."
+
+#define MSG_INFO_REPEAT_INSTALL "The product of same version can not be installed on the same machine. The installation will abort."
+
+#define MSG_INFO_32BIT_INSTALL "The product is 64bit software, so it can not be installed under the folder of "+PROGRAMFILES+", please choose another one."
+
+#define MSG_INFO_STEP_OUT_SYSINFO 	"Step out: System information"
+
+#define MSG_ERRO_CHECK_ADMIN	 	"You don't have enough privilege to continue the installation, please contact the administrator. If this is Windows 2008, maybe you need rerun the installation program by menu 'Run as administrator'."
+
+#define MSG_WARN_CHECK_EXTENDEDMEMORY   "The extended memory of your machine is less than 2GB, which may lead to installation failure or off-normal use. Do you want to continue the installation? "
+
+#define REG_LOCALDUMPS "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps"
+
+#define DUMP_PATH "C:\\CrashDumps"
+
+#define MSG_WARN_KEY_LENGTH "The length of key should be greater than or equal to 8 characters, less than or equal to 32 characters."
+
+#define MSG_WARN_RETYPE_KEY_LENGTH "The length of retype key should be greater than or equal to 8 characters, less than or equal to 32 characters."
+
+#define MSG_WARN_KEY_RETYPE "The key value is different from the retype key, please enter again"
+
+// Note: In order to have your InstallScript function executed as a custom
+// action by the Windows Installer, it must be prototyped as an 
+// entry-point function.
+
+// The keyword export identifies MyFunction() as an entry-point function.
+// The argument it accepts must be a handle to the Installer database.
+    
+/* export prototype MyFunction(HWND); */
+
+prototype HWND kernel32.OpenMutexA(NUMBER, BOOL, BYVAL STRING);
+prototype HWND kernel32.CreateMutexA(NUMBER, BOOL, BYVAL STRING);
+
+STRING svLiveProxyport;
+STRING svNS7port;
+STRING LOGFILE_PATH;
+STRING LOGFILE_NAME;
+STRING LOGFILE;
+BOOL bvUpgradeFlag;
+HWND hMutex;
+STRING szAdminPrivilege;
+//STRING szdumppath;
+STRING svkeyvalue,svretypekeyvalue,svencryption;
+
+#include "featureevents.rul"
+//---------------------------------------------------------------------------
+// OnFilterComponents
+//
+// The OnFilterComponents event is called by the framework to filter out
+// components in each feature by language and platform, override this
+// event to perform custom filtering.
+//
+// Note: This event will not be called automatically in a
+// program...endprogram style setup.
+//---------------------------------------------------------------------------
+function OnFilterComponents()
+string stDateTime;
+number nvReturn;
+begin 
+	// init logfile
+	LOGFILE_PATH = "c:\\";
+	StrSub (LOGFILE_PATH, WINDIR, 0, 3);
+	if( REMOVEONLY ) then
+		LOGFILE_NAME="nbns7uninstall.log";
+	else
+		LOGFILE_NAME="nbns7install.log";
+	endif; 	
+	LOGFILE=LOGFILE_PATH^LOGFILE_NAME; 
+	DeleteLogFile();
+	// init logfile
+	
+    // Filter file groups by current platform.
+    FeatureFilterOS(MEDIA, 0, ISOSL_ALL, TRUE);
+    FeatureFilterOS(MEDIA, 0, SYSINFO.nISOSL, FALSE);
+ 
+    // Filter file groups by current language.
+    FeatureFilterLanguage(MEDIA, ISLANG_ALL, TRUE);
+    FeatureFilterLanguage(MEDIA, STANDARD_SELECTED_LANGUAGE, FALSE);
+    WriteLogFile("SETUP OnFilterComponents Normal");
+    
+    //admin
+	if(!SYSINFO.WINNT.bAdmin_Logged_On) then
+	szAdminPrivilege = "Privileges : You don't have enough privilege to continue the installation, please contact the administrator. Maybe you need rerun the installation program by menu 'Run as administrator'.";
+	MessageBox(szAdminPrivilege,WARNING);
+	WriteLogFile(szAdminPrivilege);
+	abort;
+	endif;
+end;
+
+function OnAppSearch()
+begin 
+
+	bvUpgradeFlag=FALSE; 
+	CheckPreviousVersion();
+
+end;
+//---------------------------------------------------------------------------
+// OnBegin
+//
+// The OnBegin event is called directly by the framework after the setup
+// initializes.
+//---------------------------------------------------------------------------
+function OnBegin()
+begin
+	// Check if another installer is running.
+	hMutex = OpenMutexA(READ_CONTROL, FALSE, "NetBrain_NGInstaller");
+	
+	if (hMutex) then
+		CloseHandle(hMutex);
+		MessageBox("The installer is already running.", SEVERE);
+		abort;
+	else
+		hMutex = CreateMutexA(NULL, FALSE, "NetBrain_NGInstaller");
+	endif;
+	
+	// TO DO: you may change default non-UI setting, for example
+	//
+	// You may also perform your custom initialization steps, check requirements, etc.
+	DialogSetInfo(DLG_INFO_ALTIMAGE, SUPPORTDIR ^ "setup_top.bmp", TRUE); 
+	WriteLogFile("SETUP OnBegin Normal");
+	//Check environment
+	/*
+	if( CheckEAP() = 0 ) then
+   		abort;                  
+   	endif;         	 
+   	*/
+   	WriteLogFile( MSG_OK_CHECK_SYSTEM );
+   	svkeyvalue="";
+end;
+
+
+
+//---------------------------------------------------------------------------
+// OnFirstUIBefore
+//
+// The OnFirstUIBefore event is called by the framework when the setup is
+// running in first install mode. By default this event displays UI allowing
+// the end user to specify installation parameters.
+//---------------------------------------------------------------------------
+function OnFirstUIBefore()
+    NUMBER nResult, nSetupType, nvSize, nUser;
+    STRING szTitle, szMsg, szQuestion, svName, svCompany, szFile,RegPath;
+    STRING szLicenseFile;
+	BOOL bCustom, bIgnore1, bIgnore2;
+	STRING svTmpValue;
+	LIST listInfo;
+	STRING szField1,szField2,szFiled3;
+	NUMBER nvVar1,nvVar2;  
+	STRING svResult;
+	NUMBER nResult1,nResult2; 
+	NUMBER regResult1,regResult2,regResult3,regResult4,nvregType,nvregSize;
+	STRING szFindMe;
+	NUMBER  listID,ServicePackID;             //SdShowInfoList variable
+    NUMBER  nvReturn1,nvReturn2,nvReturn3;	  //SdShowInfoList variable
+    STRING  svReturn,szInfo1,szInfo2,szInfo3; //SdShowInfoList variable
+    STRING  rightID, svSTRING;                //SdShowInfoList variable
+	
+begin	
+    // TO DO: if you want to enable background, window title, and caption bar title                                                                   
+    // SetTitle( @PRODUCT_NAME, 24, WHITE );                                        
+    // SetTitle( @PRODUCT_NAME, 0, BACKGROUNDCAPTION ); 	                  
+    // Enable( FULLWINDOWMODE );						   
+    // Enable( BACKGROUND );							  
+    // SetColor(BACKGROUND,RGB (0, 128, 128));					   
+
+    // Added in InstallShield 15 - Show an appropriate error message if
+    // -removeonly is specified and the product is not installed.
+    if( REMOVEONLY ) then
+        Disable( DIALOGCACHE );
+		szMsg = SdLoadString( IDS_IFX_ERROR_PRODUCT_NOT_INSTALLED_UNINST );
+   		SdSubstituteProductInfo( szMsg );
+		MessageBox( szMsg, SEVERE );
+		abort;
+    endif;
+    //goto OnResumeUIBefore	  
+	if ( bvUpgradeFlag ) then 
+        ProcessConfSetting();
+        OnResumeUIBefore();
+    	return 0;
+ 	endif;
+    //goto OnResumeUIBefore	
+ 	WriteLogFile("SETUP OnFirstUIBefore ");
+	svLiveProxyport="9099";
+	
+
+Dlg_SdWelcome:
+    szTitle = "";
+    szMsg   = "The InstallShield Wizard will install NetBrain Proxy Sever on your machine. To continue the installation, click Next.";
+    nResult = SdWelcome(szTitle, szMsg);
+    if (nResult = BACK) goto Dlg_SdWelcome;
+    WriteLogFile("SETUP Finish Dlg_SdWelcome");
+    
+Dlg_SdShowInfoList:
+ 	szTitle = "System Configuration";
+    szMsg   = "The system configuration is auto-detected as follows:"; 
+    listInfo = ListCreate (STRINGLIST); 
+    //get CPU information
+    GetSystemInfo (CPU, nvReturn1, svReturn);
+    if( nvReturn1 == IS_UNKNOWN ) then
+ 		szInfo1 = "CPU: Unknown";
+    else
+    	Sprintf(szInfo1, "CPU: %d", nvReturn1,svReturn);
+    endif;
+    GetSystemInfo (EXTENDEDMEMORY, nvReturn2, svReturn);
+    Sprintf(szInfo2, "Extended Memory: %d MB", nvReturn2/1024,svReturn);
+    
+    if(SYSINFO.WINNT.bAdmin_Logged_On) then
+      	rightID = "Privileges : Administrative Privileges ";
+    else
+        rightID = "Privileges : You don't have enough privilege to continue the installation, please contact the administrator. If this is Windows 2008, maybe you need rerun the installation program by menu 'Run as administrator'.";
+    endif;
+     
+    ServicePackID = SYSINFO.WINNT.nServicePack;
+    NumToStr ( svSTRING, ServicePackID );    
+    
+    if(SYSINFO.WINNT.bWinVista_Server2008=TRUE)then 
+    	szInfo3 = "Operating System: Windows 2008";
+    	if(ServicePackID >0 ) then
+    		szInfo3 =  szInfo3+" Service Pack "+   svSTRING;
+    	endif;
+    endif;
+    if(SYSINFO.WINNT.bWin7_Server2008R2=TRUE) then      
+   		szInfo3 = "Operating System: Windows 2008 R2";
+    	if(ServicePackID >0 ) then
+    		szInfo3 =  szInfo3+" Service Pack "+   svSTRING;
+    	endif;
+    endif;
+    if(SYSINFO.WINNT.bWin8=TRUE)then 
+    	szInfo3 = "Operating System: Windows 2012";
+    	if(ServicePackID >0 ) then
+    		szInfo3 =  szInfo3+" Service Pack "+   svSTRING;
+    	endif;
+    endif;
+        if(SYSINFO.WINNT.bWin81=TRUE)then 
+    	szInfo3 = "Operating System: Windows 2012 R2";
+    	if(ServicePackID >0 ) then
+    		szInfo3 =  szInfo3+" Service Pack "+   svSTRING;
+    	endif;
+    endif;
+         
+    ListAddString(listInfo, szInfo1, AFTER);
+    ListAddString(listInfo, szInfo2, AFTER);
+    ListAddString(listInfo, szInfo3, AFTER);
+    ListAddString(listInfo, rightID, AFTER); 
+    
+    nResult = SdShowInfoList ( szTitle, szMsg, listInfo );
+    ListDestroy(listInfo);
+    if(nResult = BACK) goto Dlg_SdWelcome; 
+   
+ 
+    if(rightID = "Privileges : You don't have enough privilege to continue the installation, please contact the administrator. If this is Windows 2008, maybe you need rerun the installation program by menu 'Run as administrator'.") then
+    	WriteLogFile( MSG_ERRO_CHECK_ADMIN );
+    	MessageBox(MSG_ERRO_CHECK_ADMIN,WARNING);
+        abort;
+    endif;    
+                                          
+    WriteLogFile( MSG_INFO_STEP_OUT_SYSINFO );
+    
+Dlg_EXTENDEDMEMORY:            
+	//if extended memory less than 2G=2048MB~2000MB
+    //edit by liuyang 2016.8.24 fix ENG-11961 begin
+    if ((nvReturn2/1024) < 2000) then
+    nResult = MessageBox(MSG_WARN_CHECK_EXTENDEDMEMORY, MB_YESNO );
+		if (nResult = IDNO ) then
+		abort;
+		endif;
+    endif;
+    //edit by liuyang 2016.8.24 fix ENG-11961 end
+    
+Dlg_SdLicense:    
+    szTitle    = "";
+    nResult    = SdLicenseEx ( szTitle, "", "", SUPPORTDIR ^ "license.rtf", TRUE ); 
+    if (nResult = BACK) goto Dlg_SdShowInfoList;
+    WriteLogFile("SETUP Finish Dlg_SdLicense");
+    
+Dlg_SdAskDestPath:
+	szTitle = "Destination Location \n    Click Next to install to the default folder, or click Change to choose another one. \n";
+    szMsg   = "Install %P to:";	
+    nResult = SdAskDestPath2(szTitle, szMsg, INSTALLDIR);
+    if (nResult = BACK) goto Dlg_SdLicense;
+    
+    svTmpValue=INSTALLDIR;
+      
+    //must be 64bit
+   	if (SYSINFO.bIsWow64) then
+		szFindMe=PROGRAMFILES; 
+
+		nResult=StrFindEx ( svTmpValue, szFindMe, 0 );
+		if (nResult>=0)	then
+		
+		//StrReplace(svTmpValue,szFindMe,PROGRAMFILES64,0);
+		MessageBox(MSG_INFO_32BIT_INSTALL, WARNING);
+        goto Dlg_SdAskDestPath;		
+		endif;
+     endif;
+        
+    if(StrLength(svTmpValue)>103) then
+        MessageBox("The path is too long.", WARNING);
+        goto Dlg_SdAskDestPath;
+  	endif;
+    
+     if(CheckPathSpecChar(svTmpValue)==0)then
+  		goto Dlg_SdAskDestPath;
+  	endif;
+  	
+	FeatureCompareSizeRequired(MEDIA, svTmpValue, nvSize);
+	if (nvSize != 0) then      
+		MessageBox(szSdStr_NotEnoughSpace, WARNING);
+		goto Dlg_SdAskDestPath;
+	endif; 
+	
+	INSTALLDIR = svTmpValue;
+	if (ExistsDir (DUMP_PATH) != EXISTS) then
+	if (CreateDir (DUMP_PATH) < 0) then
+	WriteLogFile("Unable to create directory: "+DUMP_PATH);
+	else
+	WriteLogFile("DUMP_PATH:"+DUMP_PATH);
+	endif;
+    endif;
+	WriteLogFile("SETUP Finish Dlg_SdAskDestPath");
+	WriteLogFile("INSTALLDIR:"+INSTALLDIR);
+	
+	
+	//maybe modify
+Dlg_CdAskPort:
+	/*
+	szTitle = "Proxy Service Configuration";
+    szMsg   = "Please input the port number for Proxy Service.";
+    szField2 = "Port Number:"; 
+	
+	//maybe SdShowDlgEdit3
+	nResult = SdShowDlgEdit1 ( szTitle, szMsg,  szField2, svLiveProxyport ); 
+	*/
+	
+	szTitle = "Proxy Service Configuration";
+    szMsg   = "Please input the port number and encryption key for Proxy Service.";
+    szField1 = "Port Number:"; 
+    szField2 = "Encryption Key:";
+    //szField3 = "Retype key:";
+	//SdShowDlgEdit3 ( szTitle, szMsg, szField1, szField2, szField3, svLiveProxyport,svkeyvalue, svretypekeyvalue );
+    SdShowDlgEdit2 ( szTitle, szMsg, szField1, szField2, svLiveProxyport,svkeyvalue);
+    
+	if (nResult = BACK) then
+       goto Dlg_SdAskDestPath;
+    endif; 
+    	 
+    StrTrim(svLiveProxyport);
+      if (StrCompare ("", svLiveProxyport)=0) then 
+		MessageBox ("The Proxy Service port should not be empty.", SEVERE);
+		goto Dlg_CdAskPort;
+      endif;
+      
+	StrToNum(nvVar2,svLiveProxyport); 
+	if( nvVar2 > 65535 || nvVar2 < 100 ) then 
+		MessageBox ( "The port number must be between 100 and 65535.", SEVERE );
+		goto Dlg_CdAskPort; 
+	endif;  
+	    
+    nResult = RunApplication( SystemFolder ^ "cscript.exe", "\"" + SUPPORTDIR ^ "portcheck.vbs"+"\"" + " " + svLiveProxyport +" "+"\""+SUPPORTDIR ^ "netstat.txt"+"\"", FALSE,TRUE,FALSE );
+
+    if (nResult!=0) then 
+    	Sprintf ( svResult, MSG_ERR_PGINFO_PORT_INVALID, svLiveProxyport); 
+    	MessageBox(svResult,WARNING);
+    	goto Dlg_CdAskPort;
+    endif;  
+    
+    DeleteFile ( SUPPORTDIR ^ "netstat.txt" );
+     
+    StrTrim(svkeyvalue);
+    if (StrLength(svkeyvalue) > 0 ) then        
+     if( StrLength(svkeyvalue) > 32 || StrLength(svkeyvalue) < 8 ) then 
+		MessageBox (MSG_WARN_KEY_LENGTH,WARNING);
+		goto Dlg_CdAskPort; 
+	 endif;
+	 svencryption= "TRUE";
+	else
+	 svencryption= "FALSE";	
+	endif;
+	
+    WriteLogFile("SETUP Finish Dlg_CdAskPort");
+    WriteLogFile("The LiveProxyport: "+svLiveProxyport);
+    WriteLogFile("The keyvlaue: "+svkeyvalue);
+    WriteLogFile("The encryption: "+svencryption);
+
+Dlg_InstallIPWorks:
+    /*
+    RegPath = SUPPORTDIR^"ImportIPWorksReg.bat";
+    LongPathToQuote(RegPath,TRUE);
+    WriteLogFile("BAT PATH is:"+RegPath);
+    nResult1= LaunchApplication (RegPath, "", "", SW_HIDE, INFINITE, LAAW_OPTION_HIDDEN|LAAW_OPTION_WAIT); 
+    if (nResult1 = ISERR_SUCCESS) then
+        nResult2= LaunchApplication (SUPPORTDIR^"Setup_C++.exe", "", "", SW_SHOWNORMAL, INFINITE, LAAW_OPTION_WAIT); 
+    else
+        WriteLogFile("FAIL TO IMPORT THE REG OF IPWORKS"); 
+        abort;
+    endif;
+    if(nResult1 = ISERR_SUCCESS && nResult2 = ISERR_SUCCESS) then
+		 WriteLogFile("SETUP Finish Dlg_InstallIPWorks");
+    else
+         WriteLogFile(MSG_ERR_IPWORKS_INSTALL);
+         MessageBox(MSG_ERR_IPWORKS_INSTALL,WARNING);
+         abort;
+    endif;  
+    */
+    /*
+    nResult1= LaunchApplication (SUPPORTDIR^"Setup_C++.exe", "", "", SW_SHOWNORMAL, INFINITE, LAAW_OPTION_WAIT); 
+    if(nResult1 = ISERR_SUCCESS) then
+		 WriteLogFile("SETUP Finish Dlg_InstallIPWorks");
+    else
+         WriteLogFile(MSG_ERR_IPWORKS_INSTALL);
+         MessageBox(MSG_ERR_IPWORKS_INSTALL,WARNING);
+         abort;
+    endif;		 
+     */ 
+     //can not write the reg to HKLM\SOFTWARE,only can write the reg to HLKM\SOFTWARE\Wow6432Node,so the services can not start
+     /*
+     if(SYSINFO.bIsWow64) then 
+     REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+     nResult1= RunApplication(SUPPORTDIR^"ImportIPWorksReg.bat","", FALSE,TRUE,TRUE );
+     endif;
+     */
+     /*
+    //begin ipworks register
+    Disable(LOGGING);
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY; 
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+    nvregType = REGDB_STRING; 
+    nvregSize = -1; 
+    regResult1= RegDBSetKeyValueEx("SOFTWARE\\nsoftware\\RT\\IPC9A","",nvregType,"IPC9AB-89590294-SPH-INXUA",nvregSize);
+    regResult2= RegDBSetKeyValueEx("SOFTWARE\\nsoftware\\RT\\IPC9A","*",nvregType,"ESZK-8CUN-J6DG",nvregSize);
+    regResult3= RegDBSetKeyValueEx("SOFTWARE\\Wow6432Node\\nsoftware\\RT\\IPC9A","",nvregType,"IPC9AB-89590294-SPH-INXUA",nvregSize);
+    regResult4= RegDBSetKeyValueEx("SOFTWARE\\Wow6432Node\\nsoftware\\RT\\IPC9A","*",nvregType,"ESZK-8CUN-J6DG",nvregSize);
+    endif;
+    endif;
+    Enable(LOGGING);
+    if (regResult1 = 0 && regResult2 = 0 && regResult3 = 0 && regResult4 = 0 ) then
+        nResult2= RunApplication(SUPPORTDIR^"Setup_C++.exe","/s", FALSE,TRUE,TRUE );
+    else
+        WriteLogFile("FAIL TO IMPORT THE REG OF IPWORKS"); 
+        abort;
+    endif;
+    if(nResult2 = 0) then
+		 WriteLogFile("SETUP Finish Dlg_InstallIPWorks");
+    else
+         WriteLogFile(MSG_ERR_IPWORKS_INSTALL);
+         MessageBox(MSG_ERR_IPWORKS_INSTALL,WARNING);
+         abort;
+    endif; 
+    //end ipworks register
+    */
+                                   
+Dlg_SdStartCopy:
+    szTitle = "Ready to install NetBrain Proxy Server";
+    szMsg   = "Review the following information before clicking Install to start copying files.";  
+    listInfo = ListCreate (STRINGLIST);
+    ListAddString(listInfo, "Proxy Service Port: "+svLiveProxyport, AFTER);	
+    ListAddString(listInfo, "Destination Directory:", AFTER);
+    ListAddString(listInfo, "              " + INSTALLDIR, AFTER);
+    ListAddString(listInfo, "", AFTER);
+  
+    nResult = SdStartCopy( szTitle, szMsg, listInfo); 
+    ListDestroy(listInfo);	
+    		
+    if (nResult = BACK) then
+       goto Dlg_CdAskPort;
+    endif;
+    WriteLogFile("SETUP Finish Dlg_SdStartCopy");
+        
+    Disable(CANCELBUTTON);
+    // Added in IS 2009 - Set appropriate StatusEx static text.
+    SetStatusExStaticText("Please wait while the InstallShield Wizard installs NetBrain Proxy Server.");
+
+    // setup default status
+    Enable(STATUSEX);
+        
+    return 0;
+end; 
+
+
+//---------------------------------------------------------------------------
+// OnMaintUIBefore
+//
+// The OnMaintUIBefore event is called by the framework when the setup is
+// running in maintenance mode. By default this event displays UI that
+// allows the end user to add or remove features, repair currently
+// installed features or uninstall the application.
+//---------------------------------------------------------------------------
+function OnMaintUIBefore()
+	NUMBER nResult, nType;
+	STRING szTitle, szMsg, svDir, svResult, szCaption;
+begin
+	// TO DO: if you want to enable background, window title, and caption bar title   								
+	// SetTitle( @PRODUCT_NAME, 24, WHITE );					
+	// SetTitle( @PRODUCT_NAME, 0, BACKGROUNDCAPTION );  			
+	// SetColor(BACKGROUND,RGB (0, 128, 128));					
+	// Enable( FULLWINDOWMODE );						
+	// Enable( BACKGROUND );							
+WriteLogFile("SETUP OnMaintUIBefore");	
+Dlg_Start:
+
+    // Added in Version 9.5 - Support for REMOVEONLY option.
+    if( !REMOVEONLY ) then
+		// In standard mode show maintenance dialog
+		/*
+		Disable(BACKBUTTON);
+		nType = SdWelcomeMaint(szTitle, szMsg, MODIFY); 
+		WriteLogFile("SETUP OnMaintUIBefore begin to maint");
+		Enable(BACKBUTTON);
+		*/
+		MessageBox (MSG_INFO_REPEAT_INSTALL, INFORMATION);
+ 	    abort;
+	else
+        // Hide the initial progress dialog as otherwise the user can
+        // click on it, and hide the MessageBox.
+        Disable( DIALOGCACHE );
+        WriteLogFile("SETUP OnMaintUIBefore begin to uninstall");
+        // In RemoveOnly mode, set to remove.
+        nType = REMOVEALL;
+    endif;
+	
+	// Show Uninstall Confirmation Dialog
+    if ( nType = REMOVEALL ) then
+		nResult = MessageBox("Do you really want to uninstall NetBrain Proxy Server?", MB_YESNO );
+		if (nResult != IDYES ) then
+            
+            if( REMOVEONLY ) then
+                // In REMOVEONLY mode, abort the setup.
+                abort;
+            else
+                // In non-REMOVEONLY mode, redisplay the previous dialog.
+			    goto Dlg_Start;
+            endif;
+
+		endif;
+	endif;
+
+	nResult = NEXT;
+
+Dlg_SdFeatureTree:
+	if (nType = MODIFY) then
+		szTitle = "";
+		szMsg = "";
+		nResult = SdFeatureTree(szTitle, szMsg, INSTALLDIR, "", 2);
+		if (nResult = BACK) goto Dlg_Start;
+	endif;
+
+	switch(nType)
+        case REMOVEALL: 
+        			
+			Disable(CANCELBUTTON);
+			
+            ComponentRemoveAll();
+
+            // Added in IS 2009 - Set appropriate StatusEx static text.
+            SetStatusExStaticText( "Please wait while NetBrain Proxy Server is being uninstalled." );
+
+        case REPAIR:
+        
+            ComponentReinstall();
+
+            // Added in IS 2009 - Set appropriate StatusEx static text.
+            SetStatusExStaticText( SdLoadString( IDS_IFX_STATUSEX_STATICTEXT_MAINTUI_REPAIR ) );
+
+
+        case MODIFY:
+
+            // Added in IS 2009 - Set appropriate StatusEx static text.
+            SetStatusExStaticText( SdLoadString( IDS_IFX_STATUSEX_STATICTEXT_MAINTUI_MODIFY ) );
+
+    endswitch;
+    
+	Enable(STATUSEX); 
+
+
+end;
+
+//---------------------------------------------------------------------------
+// OnFirstUIAfter
+//
+// The OnFirstUIAfter event called by the framework after the file transfer
+// of the setup when the setup is running in first install mode. By default
+// this event displays UI that informs the end user that the setup has been
+// completed successfully.
+//---------------------------------------------------------------------------
+function OnFirstUIAfter()
+    STRING szTitle, szMsg1, szMsg2, szOpt1, szOpt2;
+    NUMBER bOpt1, bOpt2;   
+    NUMBER nvSize,nvType;
+    STRING szPath,szWEB;
+begin
+    Enable(CANCELBUTTON);
+	Disable(STATUSEX); 
+    WriteLogFile("SETUP OnFirstUIAfter");
+	bOpt1   = FALSE;
+    bOpt2   = FALSE;    
+    
+    szTitle="";
+    
+    SdFinish ( szTitle , szMsg1 , szMsg2 , szOpt1 , szOpt2 , bOpt1 , bOpt2 );  
+    WriteLogFile("SETUP SdFinish");
+    //do not show help page edit by liuyang 2016.06.03 begin
+    /**
+    if (MODE != SILENTMODE) then
+		RegDBSetDefaultRoot(HKEY_LOCAL_MACHINE);
+		nvSize = 0 ;
+		szPath="";
+		RegDBGetKeyValueEx("software\\microsoft\\windows\\currentversion\\App paths\\IEXPLORE.EXE" ,"",nvType , szPath , nvSize );
+		if( nvSize > 0 ) then 
+			WriteLogFile("SETUP open IE");
+			szWEB=INSTALLDIR ^ "resource\\webup\\index.html";
+			LongPathToQuote( szWEB, TRUE );
+			RunApplication(  szPath ,  szWEB, TRUE,FALSE,FALSE ); 
+		endif;
+    endif;
+    **/
+    //do not show help page edit by liuyang 2016.06.03 end
+end;
+
+function OnAbort()
+	string szTitle, szMsg1, szMsg2; 
+begin
+	if (bvUpgradeFlag=TRUE) then 
+    	ProcessConfSettingback();
+	Disable(STATUSEX); 
+	endif;
+	SdSetupCompleteError(szTitle, szMsg1, szMsg2);
+end;
+
+function OnMaintUIAfter()
+    STRING szTitle, szMsg1, szMsg2, szOpt1, szOpt2;
+    NUMBER bOpt1, bOpt2;
+begin  
+	
+	Enable(CANCELBUTTON);
+
+	Disable(STATUSEX);
+    
+    if( REMOVEALLMODE ) then
+        szTitle = SdLoadString(IFX_SDFINISH_REMOVE_TITLE);
+        szMsg1 = "NetBrain Proxy Server has been successfully uninstalled.";
+    else
+        szTitle = SdLoadString(IFX_SDFINISH_MAINT_TITLE);    
+        szMsg1  = SdLoadString(IFX_SDFINISH_MAINT_MSG1);
+    endif;
+
+	bOpt1   = FALSE;
+    bOpt2   = FALSE;    
+
+    //if ( BATCH_INSTALL ) then
+    //	SdFinishReboot ( szTitle , szMsg1 , SYS_BOOTMACHINE , szMsg2 , 0 );
+    //else    
+	//Enable(CANCELBUTTON);	
+    SdFinish ( szTitle , szMsg1 , szMsg2 , szOpt1 , szOpt2 , bOpt1 , bOpt2 );
+    //endif;
+end;
+
+function OnResumeUIBefore()
+	int    nResult;
+	string szTitle, szMsg;
+begin 
+
+WriteLogFile("SETUP OnResumeUI begin to upgrade");
+
+Dlg_SdWelcome:
+	 szTitle = "Welcome to upgrade wizard for NetBrain Network Sever";
+    	szMsg   = "This setup will upgrade your installation of NetBrain Proxy Server. To continue, please click Next.";
+    	SdWelcome( szTitle, szMsg );
+ 		WriteLogFile("SETUP OnResumeUI Dlg_SdWelcome");
+ Enable(STATUSEX);
+	
+
+	
+end;
+//---------------------------------------------------------------------------
+// OnEnd
+//
+// The OnEnd event is called at the end of the setup. This event is not
+// called if the setup is aborted.
+//---------------------------------------------------------------------------
+function OnEnd()
+begin	
+	if (hMutex) then
+		CloseHandle(hMutex);
+	endif;
+end;

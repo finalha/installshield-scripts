@@ -1,0 +1,839 @@
+#define OFN_FILEMUSTEXIST            0x00001000
+#define OFN_PATHMUSTEXIST            0x00000800
+#define OFN_HIDEREADONLY             0x00000004
+#define OFN_NOCHANGEDIR              0x00000008
+#define OFN_EXPLORER                 0x00080000
+
+typedef STR260
+begin
+   STRING sz[260];
+end;
+
+typedef OPENFILENAME
+	begin
+		LONG     lStructSize;
+		HWND     hwndOwner;
+		HWND     hInstance;
+		POINTER  lpstrFilter;
+		POINTER  lpstrCustomFilter;
+		LONG     nMaxCustFilter;
+		LONG     nFilterIndex;
+		POINTER  lpstrFile;
+		LONG     nMaxFile;
+		POINTER  lpstrFileTitle;
+		LONG     nMaxFileTitle;
+		POINTER  lpstrInitialDir;
+		POINTER  lpstrTitle;
+		LONG     Flags;
+		SHORT    nFileOffset;
+		SHORT    nFileExtension;
+		POINTER  lpstrDefExt;
+		POINTER  lCustData;
+		POINTER  lpfnHook;
+		POINTER  lpTemplateName;
+	end;
+
+typedef SYSTIME
+begin
+    SHORT nYear;
+    SHORT nMonth;
+    SHORT nDayOfWeek;
+    SHORT nDay;
+    SHORT nHour;
+    SHORT nMinute;
+    SHORT nSecond;
+    SHORT nMillisecond;
+end;
+		
+prototype comdlg32.GetOpenFileNameA( LONG );
+prototype FileBrowseDlg( BYREF STRING, STRING, STRING, STRING);
+prototype STRING RecordTimeLog();
+prototype WriteLogFile( STRING );
+prototype DeleteLogFile(); 
+prototype RunApplication( STRING , STRING, BOOL, BOOL, BOOL); 
+prototype STRING ReadString(STRING,STRING,BOOL);
+prototype StrIsNums( STRING );
+prototype STRING GetOSEnvVar(STRING);
+prototype DeleteFolder(STRING);
+prototype getParentPath(STRING,BYREF STRING);
+prototype CheckPathSpecChar(STRING);
+prototype CheckPathSpecCharSlient(STRING);
+prototype WriteInfo(); 
+prototype writeinfouninstall();
+prototype FormatVer(STRING,BYREF STRING); 
+prototype CopyFileToDes(STRING,STRING); 
+prototype cdecl BOOL WriteVersion.AU_WriteInfo(BYVAL STRING,BYVAL STRING,BYVAL STRING);
+prototype cdecl BOOL WriteVersion.AU_GenerateGuid(BYVAL STRING);
+prototype WriteCookieFile(STRING);
+prototype NUMBER checkIPAddress(STRING);
+prototype SdRedis();
+prototype ShowListContentFromTxt(STRING,STRING,LIST,STRING,STRING);
+prototype WriteRegistryDump();
+prototype DeleteRegistryDump();
+prototype WriteRegistryRedis();
+prototype DeleteRegistryRedis();
+prototype HWND kernel32.GetSystemTime(SYSTIME POINTER);
+
+function WriteLogFile( svContent )   
+ 	NUMBER   FileHandle;   
+	NUMBER   nResult;
+	STRING	 svResult;
+begin           
+	nResult = FindFile ( LOGFILE_PATH,  LOGFILE_NAME, svResult ); 
+	
+	OpenFileMode (FILE_MODE_APPEND);  
+	if( nResult < 0 ) then
+		nResult = CreateFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	else
+		nResult = OpenFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	endif;
+	
+	if( nResult < 0 ) then  
+		return -1;
+	endif; 
+ 
+	nResult = WriteLine(FileHandle,"");
+	nResult = WriteLine(FileHandle,RecordTimeLog());
+ 
+    nResult = WriteLine(FileHandle,svContent);     
+    CloseFile(FileHandle);    
+    return 0;
+end; 
+
+function STRING RecordTimeLog()
+     number  nvReturn1;
+     string  svResult1,szDateTimetmp, szUtc;
+     SYSTIME now;
+ begin       
+     GetSystemInfo( DATE, nvReturn1, svResult1 );  
+     szDateTimetmp = svResult1;
+     szDateTimetmp = szDateTimetmp + " ";
+     GetSystemInfo( TIME, nvReturn1, svResult1 );
+     szDateTimetmp = szDateTimetmp + svResult1;     
+     GetSystemTime(&now);
+    Sprintf(szUtc, "(UTC: %d-%d-%d %d:%0.2d:%0.2d:%0.3d)", 
+            now.nMonth, now.nDay, now.nYear, 
+            now.nHour, now.nMinute, now.nSecond, now.nMillisecond);
+    szDateTimetmp = szDateTimetmp + " " + szUtc; 
+     return szDateTimetmp;
+ end;
+
+
+function RunApplication( cmd , param, bShow, bWait,bShell )
+    number nShowWindow;
+    number nOptions;
+begin
+	LongPathToQuote( cmd, TRUE );
+	//LongPathToQuote( param, TRUE );
+	if( bShell = TRUE ) then 
+		param=param+" >> "+LOGFILE+" 2>>^&1";                 
+	endif;
+	nShowWindow = SW_NORMAL;
+	nOptions = LAAW_OPTION_CHANGEDIRECTORY | LAAW_OPTION_FIXUP_PROGRAM;
+	if( bShow = FALSE ) then 
+		nShowWindow = SW_HIDE; 
+		nOptions |= LAAW_OPTION_HIDDEN;
+	endif;     	
+	if( bWait = TRUE ) then 
+		nOptions |= LAAW_OPTION_WAIT; 
+	else                           
+		nOptions |= LAAW_OPTION_NOWAIT; 
+	endif;
+	
+	LaunchApplication( cmd, param, "", nShowWindow, INFINITE, nOptions  ); 
+	 WriteLogFile( LAAW_PARAMETERS.szCommandLineResult);
+	 WriteLogFile( LAAW_PARAMETERS.szStatusText );
+	
+	return LAAW_PARAMETERS.nLaunchResult;
+
+     
+	     
+end;  
+
+
+
+function DeleteLogFile() 
+	NUMBER nvRet;
+begin
+
+    nvRet = DeleteFile ( LOGFILE_PATH + LOGFILE_NAME );
+    if( nvRet = 0 || nvRet = ISERR_FILE_NOT_FOUND  ) then 
+    	return 0;
+    else 
+    	return -1;
+    endif;
+end;    
+
+
+function STRING GetOSEnvVar(svOSvar) 
+NUMBER nFileHandle;   
+STRING svLine;
+begin   
+    
+    LaunchAppAndWait( SystemFolder^"cmd.exe" , "/c echo %"+svOSvar+"% >"+SUPPORTDIR^"OSVAR",WAIT|LAAW_OPTION_HIDDEN);
+    
+    OpenFileMode (FILE_MODE_NORMAL); 
+     
+    OpenFile (nFileHandle, SUPPORTDIR, "OSVAR"); 
+    GetLine (nFileHandle, svLine);
+    CloseFile (nFileHandle); 
+
+    return svLine;
+   
+       
+end;
+
+
+function DeleteFolder(szFolderPath)   
+NUMBER nResult;   
+STRING szFileName;    
+LIST listID;
+begin  
+	if (ExistsDir (szFolderPath)=EXISTS) then 
+	WriteLogFile("There exits dir:"+szFolderPath); 
+	    nResult=FindAllFiles(szFolderPath,"*.*",szFileName,RESET);
+        while(nResult = 0)
+	        SetFileInfo (szFileName ,FILE_ATTRIBUTE , FILE_ATTR_NORMAL ,"" );
+	        nResult=FindAllFiles(szFolderPath,"*.*",szFileName,CONTINUE); 
+        endwhile;               
+        
+        DeleteAgain:
+        if DeleteDir(szFolderPath, ROOT)<0 then 
+        	nResult=SdFilesInUse("Files in Use","Can not delete the following folder(s) because files are being used. Save your work and click Retry to continue.",szFolderPath,listID);    
+        	if (nResult = IDRETRY) then
+       			goto DeleteAgain;   
+       		endif;
+        endif;
+        WriteLogFile("End delete folder"+szFolderPath); 
+    endif;		
+end; 
+
+function STRING ReadString(sStringDir ,sStringFile,bonlyline) 
+	STRING  svLine;
+	STRING  svResult;   
+    NUMBER   nFileHandle;  
+    NUMBER   nResult;    
+    NUMBER   nvResult;  
+begin           
+	nResult = FindFile ( sStringDir,  sStringFile, svResult ); 
+	if(0>nResult) then
+		return "";
+	endif;
+	if (bonlyline==TRUE) then 
+		OpenFileMode (FILE_MODE_NORMAL);    
+	else
+		OpenFileMode (FILE_MODE_BINARYREADONLY);
+	endif;
+	if(0>OpenFile(nFileHandle,sStringDir,sStringFile)) then
+		return "";                                                   		
+	endif;     
+	if (bonlyline==TRUE) then  
+	    if (GetLine (nFileHandle, svLine) != 0)  then 
+            svLine= "";    
+        endif;
+    else  
+    	GetFileInfo ( sStringDir + sStringFile, FILE_SIZE, nvResult, svResult ); 
+    	if (ReadBytes (nFileHandle, svLine, 0, nvResult) < 0) then 
+        	svLine= "";
+    	endif;
+	endif;    
+    CloseFile (nFileHandle);    
+    return svLine;
+end; 
+
+
+
+function StrIsNums( svStr )
+	NUMBER iLength, iVal; 
+begin
+	iVal = 0;
+	iLength = StrLength (svStr); 
+	while (iVal < iLength) 
+		if(  svStr[iVal] < '0' ||  svStr[iVal] > '9' ) then
+			return -1;                                                  
+		endif;
+		iVal++; 
+	endwhile;   
+	return 0;
+end; 
+
+function getParentPath(szPath,svParentPath) 
+LIST listID; 
+STRING svStr;
+NUMBER nResult;
+begin 
+   
+    StrRemoveLastSlash ( szPath );
+ 	listID = ListCreate (STRINGLIST); 
+ 	StrGetTokens ( listID , szPath , "\\" );  
+ 	ListSetIndex (listID, LISTLAST);   
+ 	ListDeleteString ( listID ); 
+ 	 	
+ 	ListGetFirstString(listID,svStr); 
+    svParentPath="";
+    while (nResult != END_OF_LIST) 
+    	svParentPath=svParentPath^svStr;
+    	nResult = ListGetNextString (listID, svStr);
+    endwhile;
+     	
+end; 
+
+function CheckPathSpecChar(spathtocheck)
+begin  
+	//return (1);
+	//#$%^&@~`!;',
+	if(StrFind (spathtocheck, "#")>-1 ||StrFind (spathtocheck, "$")>-1 ||StrFind (spathtocheck, "%")>-1 ||StrFind (spathtocheck, "^")>-1 ||StrFind (spathtocheck, "&")>-1 ||StrFind (spathtocheck, "@")>-1||StrFind (spathtocheck, "~")>-1||StrFind (spathtocheck, "`")>-1||StrFind (spathtocheck, "!")>-1||StrFind (spathtocheck, ";")>-1||StrFind (spathtocheck, "'")>-1||StrFind (spathtocheck, ",")>-1)  then
+		MessageBox("The Path can not include any of the following characters: #$%^&@~`!;', ", SEVERE);
+		return (0);                            
+	endif; 
+	return (1);
+end; 
+
+function WriteRegistryRedis()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+	Disable(LOGGING);
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+   		  RegDBSetKeyValueEx(REGREDIS,"Redis_InstallDir",nvType,svRedisInstalldir,nvSize);
+   		  RegDBSetKeyValueEx(REGREDIS,"Redis_Version",nvType,REDIS_VERSION,nvSize);
+   		  //to avoid to show two uninstall iconf of redis on control panel, hide uninstall icon of "Redis on Windows" begin
+   		  //RegDBSetKeyValueEx(REDIS_MSI_UNINSTALL_PATH,"SystemComponent",REGDB_NUMBER,"1",nvSize);
+   		  //to avoid to show two uninstall iconf of redis on control panel, hide uninstall icon of "Redis on Windows" end
+    endif;
+    endif;
+    Enable(LOGGING);   
+end;  
+
+function DeleteRegistryRedis()
+begin
+ if(SYSINFO.bIsWow64) then 
+     REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+    	RegDBDeleteKey (REGREDIS);    	
+ 	endif;
+ endif;
+end;
+
+function WriteInfo()
+STRING svStr,svDateTime,svDate,svTime,svYear,svMonth,svDay;
+NUMBER nvDate,nvTime,nId; 
+LIST   listID;
+STRING svLogPath,svALLUSERSPROFILE;
+begin
+     WriteLogFile("Write info for allusersprofile");
+     //RunApplication(SUPPORTDIR^"mknetbrain.bat","\""+SETUPTYPE+"\"", FALSE,TRUE,FALSE );
+     
+	 GetSystemInfo(DATE,nvDate,svDate);
+	 
+	 listID = ListCreate (STRINGLIST);
+	 StrGetTokens (listID, svDate, "-");  
+	 ListGetFirstString (listID, svMonth); 
+	 ListGetNextString (listID, svDay);
+	 ListGetNextString (listID, svYear); 
+	 ListDestroy (listID); 
+	 StrToNum ( nId, svMonth );
+	 if (nId <10) then  
+	 svMonth= "0"+svMonth;
+	 endif;
+	 StrToNum ( nId, svDay );
+	 if (nId <10) then  
+	 svDay= "0"+svDay;
+	 endif;
+	 svDate=svYear+"/"+svMonth+"/"+svDay;
+	  
+	 GetSystemInfo(TIME,nvTime,svTime);
+	 
+	 svDateTime=svDate+" "+svTime; 
+	 
+	 svALLUSERSPROFILE=GetOSEnvVar("ALLUSERSPROFILE"); 
+	 
+	 StrTrim ( svALLUSERSPROFILE );
+	 
+	 svLogPath=svALLUSERSPROFILE^"NetBrain"^"UpdateLog"^SETUPTYPE;
+	 	 
+	 UseDLL ( DLLNAME ); 
+	 AU_GenerateGuid(SETUPTYPE);
+	 AU_WriteInfo(SETUPTYPE,"Type",SETUPTYPE);
+	 AU_WriteInfo(SETUPTYPE,"Version",IFX_PRODUCT_VERSION);
+	 AU_WriteInfo(SETUPTYPE,"ViewVersion",VIEWVERSION); 
+	 AU_WriteInfo(SETUPTYPE,"Patch","");
+	 AU_WriteInfo(SETUPTYPE,"LastUpgradeTime",svDateTime);
+	 AU_WriteInfo(SETUPTYPE,"status","1");
+	 AU_WriteInfo(SETUPTYPE,"LastPatchTime","");
+	 AU_WriteInfo(SETUPTYPE,"InstallFolder",INSTALLDIR);
+	 AU_WriteInfo(SETUPTYPE,"UpgradeLogPath",svLogPath);       
+	 UnUseDLL ( DLLNAME );
+	 
+end;
+
+function writeinfouninstall()
+begin
+	 UseDLL ( DLLNAME ); 
+	 AU_WriteInfo(SETUPTYPE,"status","0");     
+	 UnUseDLL ( DLLNAME );
+end;
+
+function FormatVer(szVer,svVer) 
+	LIST   listID;  
+	NUMBER nvNum,iCount; 
+	NUMBER nvReturn;
+begin	
+	listID = ListCreate (STRINGLIST);
+	if (listID = LIST_NULL) then 
+		return -1;
+	endif; 
+	
+	nvReturn = StrGetTokens (listID, szVer, ".");
+	
+	if ( nvReturn = 0 ) then   
+		nvNum = ListCount (listID);
+		ListSetIndex (listID, LISTLAST);
+		 
+		for iCount = nvNum to 4-1  
+			ListAddString (listID,"0",AFTER); 
+		endfor;  
+		
+		nvReturn = StrPutTokens (listID,svVer,".",FALSE);
+	endif;
+	
+	ListDestroy (listID);
+    
+    return nvReturn;
+    	
+end; 
+
+function CopyFileToDes(szSourcefile,szDestfile)
+    NUMBER nResult; 
+begin 
+	Disable(LOGGING);
+    WriteLogFile ("Copy "+szSourcefile+" to "+szDestfile);
+    
+    nResult = CopyFile(szSourcefile, szDestfile); 
+    
+    // Report the results of the copy operation. 
+    switch (nResult) 
+        case 0: 
+            WriteLogFile ("Files successfully copied."); 
+        case COPY_ERR_CREATEDIR: 
+            WriteLogFile ("A target directory could not be created."); 
+        case COPY_ERR_MEMORY: 
+            WriteLogFile ("Insufficient memory."); 
+        case COPY_ERR_NODISKSPACE: 
+            WriteLogFile ("Insufficint disk space.");
+        case COPY_ERR_OPENINPUT: 
+            WriteLogFile ("Unable to open the input files in "+ szSourcefile); 
+        case COPY_ERR_OPENOUTPUT: 
+            WriteLogFile ("Unable to copy the source files."); 
+        case COPY_ERR_TARGETREADONLY: 
+            WriteLogFile ("A target file already exists and cannot be overwritten."); 
+        default:
+            WriteLogFile ("An unspecified error occurred. "+FormatMessage(nResult)); 
+    endswitch;  
+    Enable(LOGGING);
+end;
+
+function NUMBER checkIPAddress( svIP )
+ NUMBER n;
+ begin
+ RegDBDisConnectRegistry( 0 ); // in case it's already open
+ n = RegDBConnectRegistry ( svIP, HKEY_LOCAL_MACHINE, 0 );
+ RegDBDisConnectRegistry( 0 );
+ return n;
+ end;
+ 
+// SdRedis -------------------------------------------------------------
+function  SdRedis()
+    string  szDlg, szFile[512], szTemp;
+    number  nId, nResult, nSdRedis, nTemp;
+    HWND    hwndDlg, hwndButton;
+    BOOL    bDone;
+    LIST   servers, listFiles;
+begin
+
+    szDlg = "SdRedis";
+    
+    // record data produced by this dialog
+    if (MODE=SILENTMODE) then
+        SdMakeName(szAppKey, szDlg, "", nSdRedis);
+        SilentReadData(szAppKey, "Result", DATA_NUMBER, szTemp, nId); 
+        
+        if ((nId != BACK) && (nId != CANCEL)) then
+			/*
+			if (svredisssl = "true") then
+			SilentReadData(szAppKey, "redisPort", DATA_STRING, redisSSLPort, nTemp); 
+			else
+			SilentReadData(szAppKey, "redisPort", DATA_STRING, redisPort, nTemp);  
+			endif;
+			*/
+			SilentReadData(szAppKey, "redisPort", DATA_STRING, redisPort, nTemp);
+			SilentReadData(szAppKey, "redisPassword", DATA_STRING, redisPassword, nTemp);
+			SilentReadData(szAppKey, "redisConfirmPassword", DATA_STRING, redisConfirmPassword, nTemp);
+			SilentReadData(szAppKey, "stunnelPort", DATA_STRING, stunnelPort, nTemp); 								
+ 			SilentReadData(szAppKey, "redisCertPath", DATA_STRING, redisCertPath, nTemp); 
+			SilentReadData(szAppKey, "redisPrivateKey", DATA_STRING, redisPrivateKey, nTemp); 
+			SilentReadData(szAppKey, "redisUseSSL", DATA_NUMBER, szTemp, nTemp); 
+
+			if (nTemp == 1) then
+				redisSsl = BUTTON_CHECKED;
+			else
+				redisSsl = BUTTON_UNCHECKED;
+			endif;			
+	    endif;
+	    return nId;        
+    endif;
+
+    // ensure general initialization is complete
+    if ( !bSdInit ) then
+        SdInit( );
+    endif;
+
+    if (EzDefineDialog( szDlg, ISUSER, szDlg, 0 ) = DLG_ERR) then
+	        return -1;
+    endif;
+
+    // Loop in dialog until the user selects a standard button
+    bDone = FALSE;
+
+    while (!bDone)
+
+        nId = WaitOnDialog( szDlg );
+ 
+        switch (nId)
+    
+        case DLG_INIT:
+            hwndDlg = CmdGetHwndDlg( szDlg );
+            SdGeneralInit( szDlg, hwndDlg, STYLE_BOLD, szSdProduct );
+        			
+			CtrlSetText( szDlg, 1308, redisPassword );
+			CtrlSetText( szDlg, 1335, redisConfirmPassword );
+			CtrlSetText( szDlg, 1320, redisCertPath );
+			CtrlSetText( szDlg, 1323, redisPrivateKey );
+			CtrlSetState( szDlg, 1318, redisSsl );
+			CtrlSetText( szDlg, 1310, redisPort );
+			
+			redisSsl = CtrlGetState(szDlg, 1318);
+        	if (redisSsl == BUTTON_CHECKED) then                
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1320 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1323 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1321 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1324 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1332 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                //CtrlSetText( szDlg, 1310, redisSSLPort );
+                CtrlSetText( szDlg, 1332, stunnelPort );                
+        	elseif (redisSsl == BUTTON_UNCHECKED) then                
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1320 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1323 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1321 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1324 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1332 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                //CtrlSetText( szDlg, 1310, redisPort );
+                CtrlSetText( szDlg, 1332, stunnelPort ); 
+        	endif;
+
+        case 1318:
+        	redisSsl = CtrlGetState(szDlg, 1318);
+        	if (redisSsl == BUTTON_CHECKED) then               
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1320 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1323 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1321 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1324 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1332 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, TRUE );
+                endif;
+                //CtrlSetText( szDlg, 1310, redisSSLPort );
+                CtrlSetText( szDlg, 1332, stunnelPort );  
+        	elseif (redisSsl == BUTTON_UNCHECKED) then                
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1320 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1323 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1321 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1324 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1332 );
+                if(IsWindow( hwndButton )) then
+                    EnableWindow( hwndButton, FALSE );
+                endif;
+                //CtrlSetText( szDlg, 1310, redisPort );
+                CtrlSetText( szDlg, 1332, stunnelPort ); 
+        	endif;
+
+        case 1321:
+			nResult = FileBrowseDlg(redisCertPath, "All files (*.*)", "Select File", SRCDISK);
+			CtrlSetText(szDlg, 1320, redisCertPath);
+
+        case 1324:
+			nResult = FileBrowseDlg( redisPrivateKey, "All files (*.*)", "Select File", SRCDISK);
+			CtrlSetText(szDlg, 1323, redisPrivateKey);
+            
+        case SD_PBUT_OK:
+
+            nId   = OK;
+            bDone = TRUE;
+
+        case BACK:
+            nId    = BACK;
+            bDone  = TRUE;
+
+        case DLG_ERR:
+            SdError( -1, szDlg );
+            nId   = -1;
+            bDone = TRUE;
+
+        case DLG_CLOSE:
+
+            SdCloseDlg( hwndDlg, nId, bDone );
+
+        default:
+            // check standard handling
+            if(SdIsStdButton( nId ) && SdDoStdButton( nId )) then
+                bDone = TRUE;
+            endif;
+     
+        endswitch;
+
+    endwhile;
+
+	CtrlGetText( szDlg, 1308, redisPassword );
+	CtrlGetText( szDlg, 1335, redisConfirmPassword );
+	CtrlGetText( szDlg, 1320, redisCertPath );
+	CtrlGetText( szDlg, 1323, redisPrivateKey );
+	redisSsl = CtrlGetState(szDlg, 1318);	
+	/*
+	if (redisSsl == BUTTON_CHECKED) then               
+		CtrlGetText( szDlg, 1310, redisSSLPort );	
+	else
+		CtrlGetText( szDlg, 1310, redisPort );	
+	endif;
+	*/
+	CtrlGetText( szDlg, 1310, redisPort );
+	CtrlGetText( szDlg, 1332, stunnelPort );
+    EndDialog( szDlg );
+    ReleaseDialog( szDlg );
+    SdUnInit();
+
+	// record data produced by this dialog
+    if (MODE=RECORDMODE) then
+        SdMakeName(szAppKey, szDlg, "", nSdRedis);
+        /*
+        if (svredisssl = "true") then
+		SilentWriteData(szAppKey, "redisPort", DATA_STRING, redisSSLPort, 0); 
+		else
+		SilentWriteData(szAppKey, "redisPort", DATA_STRING, redisPort, 0); 
+		endif;        
+		*/
+		SilentWriteData(szAppKey, "redisPort", DATA_STRING, redisPort, 0);
+        SilentWriteData(szAppKey, "redisPassword", DATA_STRING, redisPassword, 0);
+        SilentWriteData(szAppKey, "redisConfirmPassword", DATA_STRING, redisConfirmPassword, 0);
+        SilentWriteData(szAppKey, "stunnelPort", DATA_STRING, stunnelPort, 0);             
+        SilentWriteData(szAppKey, "redisCertPath", DATA_STRING, redisCertPath, 0); 
+        SilentWriteData(szAppKey, "redisPrivateKey", DATA_STRING, redisPrivateKey, 0); 
+        if (redisSsl == BUTTON_CHECKED) then
+			SilentWriteData(szAppKey, "redisUseSSL", DATA_NUMBER, "", 1); 
+		else
+			SilentWriteData(szAppKey, "redisUseSSL", DATA_NUMBER, "", 0); 
+		endif;
+        SilentWriteData(szAppKey, "Result", DATA_NUMBER, "", nId); 
+    endif;
+
+    return nId;
+
+end;  
+
+function FileBrowseDlg( szFile, szFilter, szDialogTitle, szInitialDir)
+
+	OPENFILENAME ofn;
+	STRING szMsg, szFileTitle[260];
+	STRING szCustomFilter[260], szTemp[260];
+	LONG   nLen, nCount, nResult, n, nFlags, nErr;
+	STR260 str;
+
+begin
+
+	nLen = StrLength( szFilter );
+	nLen = nLen - 1;
+	nCount = 0;
+	for nCount = 0 to nLen
+		if ( szFilter[nCount] = '|' ) then
+			szFilter[nCount] = '\0';
+		endif;
+	endfor;
+	
+  	UseDLL(WINSYSDIR ^ "comdlg32.dll");
+  	
+  	nFlags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY
+  			 | OFN_NOCHANGEDIR | OFN_EXPLORER;
+
+  	nResult = GetWindowHandle(HWND_INSTALL);
+	str.sz = szFile;
+ 	
+  	ofn.lStructSize = SizeOf(ofn);
+  	ofn.hwndOwner = nResult;
+  	ofn.lpstrFile = &str;
+  	ofn.nMaxFile = SizeOf(str);
+  	ofn.lpstrFilter = &szFilter;
+  	ofn.nFilterIndex = 1;
+  	ofn.lpstrFileTitle = &szFileTitle;
+  	ofn.nMaxFileTitle = 260;
+  	ofn.lpstrTitle = &szDialogTitle;
+  	ofn.Flags = nFlags;
+  	ofn.lpstrDefExt = &szTemp;
+  	ofn.lpstrInitialDir = &szInitialDir;
+  	ofn.hInstance = 0;
+  	ofn.lpstrCustomFilter = &szCustomFilter;
+  	ofn.nMaxCustFilter = 260;
+  	ofn.lpfnHook = 0;
+  	
+  	nResult = GetOpenFileNameA(&ofn);
+  	if nResult = 1 then  	
+		szFile = str.sz;
+  	else
+  		return -1;
+  	endif;
+  	
+  	UnUseDLL(WINSYSDIR ^ "comdlg32.dll");
+  	
+  	return 0;  	
+end;
+
+function ShowListContentFromTxt(svlisttitle,svlistmsg,listMongodbiniterror,svtxtpath,svtxtname)
+	STRING  svLine;
+    NUMBER  nvFileHandle;
+begin 
+	// Set the file mode to normal.
+
+    OpenFileMode (FILE_MODE_NORMAL);
+
+    // Open the text file.
+
+    if (OpenFile (nvFileHandle, svtxtpath, svtxtname) < 0) then
+
+        //MessageBox ("OpenFile failed.", SEVERE);
+
+        //abort;
+        WriteLogFile(svtxtpath+svtxtname+" can not be opened. ");
+
+    endif;
+
+    // Read lines from the text file into the string list.
+
+    while GetLine (nvFileHandle, svLine) = 0
+
+        ListAddString (listMongodbiniterror, svLine, AFTER);
+
+    endwhile;
+
+    // Close the file.
+
+    if (CloseFile (nvFileHandle) < 0) then
+
+        //MessageBox ("CloseFile failed.", SEVERE);
+        WriteLogFile(svtxtpath+svtxtname+" can not be closed. ");
+
+    endif;
+
+ 
+
+    // Display the text that was read from the file.
+
+    SdShowInfoList (svlisttitle,svlistmsg, listMongodbiniterror);
+
+end;
+
+function CheckPathSpecCharSlient(spathtocheck)
+begin  
+	//return (1);
+	//#$%^&@~`!;',
+	if(StrFind (spathtocheck, "#")>-1 ||StrFind (spathtocheck, "$")>-1 ||StrFind (spathtocheck, "%")>-1 ||StrFind (spathtocheck, "^")>-1 ||StrFind (spathtocheck, "&")>-1 ||StrFind (spathtocheck, "@")>-1||StrFind (spathtocheck, "~")>-1||StrFind (spathtocheck, "`")>-1||StrFind (spathtocheck, "!")>-1||StrFind (spathtocheck, ";")>-1||StrFind (spathtocheck, "'")>-1||StrFind (spathtocheck, ",")>-1)  then
+		//MessageBox("The Path can not include any of the following characters: #$%^&@~`!;', ", SEVERE);
+		return (0);                            
+	endif; 
+	return (1);
+end; 
+
+function WriteRegistryDump()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+	Disable(LOGGING);
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpFolder",nvType,DUMP_PATH,nvSize);
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpCount",REGDB_NUMBER,"10",nvSize);
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpType",REGDB_NUMBER,"2",nvSize); 
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"CustomDumpFlags",REGDB_NUMBER,"0",nvSize);     		
+    endif;
+    endif;
+    Enable(LOGGING);   
+end;  
+
+function DeleteRegistryDump()
+
+begin
+ if(SYSINFO.bIsWow64) then 
+     REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+    	RegDBDeleteKey (REG_LOCALDUMPS);
+ 	endif;
+ endif;
+end;

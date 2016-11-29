@@ -1,0 +1,1798 @@
+//===========================================================================
+//
+//  File Name:    Setup.rul
+//
+//  Description:  Blank setup main script file
+//
+//  Comments:     Blank setup is an empty setup project. If you want to
+//				  create a new project via. step-by step instructions use the
+//				  Project Assistant.
+//
+//===========================================================================
+
+#define VIEWVERSION "7.0.0"
+#define VERSION_RM_PACKAGE_DATE "RM v7.0.0 "
+#define FeatureRM "RM"
+#define FeatureRabbitMQ "RabbitMQ"
+#define FeatureRedis "Redis"
+#define FeatureWS "WS"
+#define FeatureMongodbinit "Mongodbinit"
+#define WSPRODUCTCODE "{05C87FA5-F91B-4ECF-B676-316514C49230}"
+#define DLLNAME SUPPORTDIR^"WriteVersion.dll"   
+#define SETUPTYPE "ResourceManager"
+#define MSG_INFO_BUILD_SETUPTIME 	"Need to save the timestamp of building data."
+#define MSG_INFO_STEP_OUT_WELCOME 	"Step out: Welcome."
+#define MSG_ERRO_CHECK_ADMIN	 	"You don't have enough privilege to continue the installation, please contact the administrator. If this is Windows 2008, maybe you need rerun the installation program by menu 'Run as administrator'."
+#define MSG_INFO_STEP_OUT_SYSINFO 	"Step out: System information"
+#define MSG_INFO_STEP_OUT_LICENSE 	"Step out: License"
+#define MSG_INFO_STEP_OUT_CUSTOMERINFO 	"Step out: Customer information."
+#define MSG_ERR_PATH_FORMAT	 	"The specified folder:\n'%s'\n is invalid,incomplete or write protected.Please type a full path with drive letter;for example'C:\\XXXX'."
+#define DISKSPACENOTENOUGH "There is not enough disk space(at least 1G )."
+#define DISKSPACE_M 1024
+#define MSG_INFO_STEP_OUT_INPUT_ROOTDIR 	"Step out: Input root dir."
+#define MSG_INFO_STEP_OUT_STARTCOPY 		"Step out: Start Copy."
+#define MSG_ERR_INSTALL_ERLANG "Erlang can not be installed successfully. The installation will abort."
+#define MSG_INFO_INSTALL_ERLANG "Succeed to install ERLANG."
+#define MSG_ERR_REG_ERLANG "Erlang can not be found in registry. The installation will abort."
+#define ERLANG_VERSION "7.2.1"
+#define RabbitMQ_VERSION "3.6.1"
+#define REDIS_VERSION "2.8.2103"
+#define ERLANG_REG "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\\ERLANG_HOME"
+#define RABBITMQ_REG "SOFTWARE\\Ericsson\\Erlang"
+#define ERLANG_EXE "otp_win64_18.2.1.exe"
+#define REDIS_MSI "Redis-x64-3.0.501.msi"
+#define INSTALLSTATUS "Please wait while the InstallShield Wizard installs NetBrain Integrated Edition."
+#define MSG_ERR_PORT_INVALID "The port: %s is in use, please enter another!"
+#define REGKEY_RM  	"WorkerServer" 
+#define REGKEY_REDIS   	"Redis"
+#define REGKEY_RABBITMQ "RabbitMQ"
+#define REGKEY_WS "WebServer"  
+#define MSG_INFO_REPEAT_INSTALL "The product of same version can not be installed on the same machine. The installation will abort."
+#define MSG_INFO_32BIT_INSTALL "The product is 64bit software, so it can not be installed under the folder of "+PROGRAMFILES+", please choose another one."
+#define MSG_MONGODB_CONNECTION_STRING1 "Please according to the format to fill the connection string of mongodb replicaset.\n"
+#define MSG_MONGODB_CONNECTION_STRING2 "The format is like:<ip>:<port>[,<ip>:<port>[...]]/?replicaSet=<replica set name>\n"
+#define MSG_MONGODB_CONNECTION_STRING3 "The example is like:192.168.33.82:28101,192.168.33.83:28101,192.168.33.84:28101/?replicaSet=rs\n"
+#define MSG_ERR_INSTALL_PYTHON "Python can not be installed successfully. The installation will abort."
+#define MSG_INFO_INSTALL_PYTHON "Succeed to install Python."
+#define MSG_ERR_INSTALL_PYMONGO "Pymongo can not be installed successfully. The installation will abort."
+#define MSG_INFO_INSTALL_PYMONGO "Succeed to install Pymongo."
+#define PYHTON_PATH "C:\\Python34"
+#define REGROOT "SOFTWARE\\NetBrain"
+#define REGWORKERSERVER "SOFTWARE\\NetBrain\\NetBrain Worker Server"
+#define REGRABBITMQ "SOFTWARE\\NetBrain\\NetBrain RabbitMQ"
+#define REGKEY_INITDATA "InitData"
+#define REGKEY_UPGRADEDATA "UpgradeData"
+#define MSG_ERR_DIR_EMPTY			"The specified folder must be empty."
+#define MSG_WARN_CHECK_EXTENDEDMEMORY    "The extended memory of your machine is less than 16GB, which may lead to installation failure or off-normal use. Do you want to continue the installation?"
+#define MSG_ERR_IP_PORT_SPECCHAR    ",the format of string is wrong or contains some special characters. "
+#define MSG_ERR_IP_CONNECTION   ",the IP address cannot be connected. "
+#define REG_LOCALDUMPS "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps"
+#define DUMP_PATH "C:\\CrashDumps"
+#define REGKEY_AMQPTSL  "amqptsl"
+#define REGKEY_AMQPTSLVERSION  	"amqptslversion" 
+#define REGKEY_AMQPPORT  	"amqpport"  
+
+
+prototype HWND kernel32.OpenMutexA(NUMBER, BOOL, BYVAL STRING);
+prototype HWND kernel32.CreateMutexA(NUMBER, BOOL, BYVAL STRING);
+
+STRING LOGFILE_PATH;
+STRING LOGFILE_NAME;
+STRING LOGFILE;
+STRING svFeatureRM;
+STRING svFeatureRabbitMQ;
+STRING svFeatureRedis;
+STRING svFeatureWS;
+STRING svFeatureMongodbinit;
+STRING svCurrentVersion;
+NUMBER nvInstallDataDir;
+STRING svUserName,szCompany;
+STRING svOSVer;
+STRING svRMInstalldir,svRabbitMQInstalldir,svRedisInstalldir,svMongodbinitInstalldir;
+STRING svDataSetupTime;
+STRING svTempVal;
+STRING svDataDirRoot;
+NUMBER nResult,nResult1;
+HWND hMutex;
+STRING COOKIEFILE_PATH;
+STRING COOKIEFILE_NAME;
+STRING COOKIEFILE;
+STRING svamqpip,svamqpport,svredisip,svredisport,svmongodbip,svmongodbport,svmongodbrepicasetstring;
+NUMBER nvCheckStandalone,nvCheckreplicaSet,nvInitialize,nvUpgrade;
+//mongodb input UI begin
+STRING replicaSetName, mongodbusername, mongodbpassword;
+BOOL mongodbssl;
+LIST listServers;
+STRING mongodbsslstr,mongoprimarynodestr,svreplicasetstr,svString,svMongodbprimaryIP,svMongodbprimaryPort;
+//mongodb input UI end
+//RabbitMQ input UI begin
+STRING rabbitMqUsername, rabbitMqPassword, rabbitMqLocalPort, rabbitMqClusterPort;
+STRING rabbitMqEmpdPort, rabbitMqClusterId, rabbitMqCertCaPath, rabbitMqCertPath, rabbitMqPrivateKey, rabbitMqTlsVersion;
+BOOL rabbitMqSsl;
+STRING svrabbitmqssl;
+LIST rabbitMqTlsVersions, rabbitMqServers;
+STRING rabbitmqnodestr,rabbitmqconnectionstr;
+//RabbitMQ input UI end
+NUMBER nLocation;
+STRING svinitdata,svupgradedata;
+STRING svFileName;
+LIST listDirs,listData;
+STRING szAdminPrivilege;
+LIST listMongodbiniterror;
+NUMBER nResultRabbitMQ,nResultMongodb;
+STRING svrabbitmqip,svrabbitmqport;
+STRING svrabbitmqtlsversion;
+//STRING szdumppath;
+
+// Included header files ----------------------------------------------------
+#include "ifx.h"
+#include "featureevents.rul"
+
+// Note: In order to have your InstallScript function executed as a custom
+// action by the Windows Installer, it must be prototyped as an 
+// entry-point function.
+
+// The keyword export identifies MyFunction() as an entry-point function.
+// The argument it accepts must be a handle to the Installer database.
+    
+/* export prototype MyFunction(HWND); */
+
+//---------------------------------------------------------------------------
+// OnFilterComponents
+//
+// The OnFilterComponents event is called by the framework to filter out
+// components in each feature by language and platform, override this
+// event to perform custom filtering.
+//
+// Note: This event will not be called automatically in a
+// program...endprogram style setup.
+//---------------------------------------------------------------------------
+function OnFilterComponents()
+string stDateTime;
+number nvReturn;
+begin 
+	// init logfile begin
+	LOGFILE_PATH = "c:\\";
+	StrSub (LOGFILE_PATH, WINDIR, 0, 3);
+	if( REMOVEONLY ) then
+		LOGFILE_NAME="nbrmuninstall.log";
+	else
+		LOGFILE_NAME="nbrminstall.log";
+	endif; 	
+	LOGFILE=LOGFILE_PATH^LOGFILE_NAME; 
+	DeleteLogFile();
+	// init logfile end
+	
+	//init cookiefile begin
+    COOKIEFILE_PATH = "C:\\Users\\Administrator\\";
+    COOKIEFILE_NAME = ".erlang.cookie";
+    COOKIEFILE=COOKIEFILE_PATH^COOKIEFILE_NAME; 
+    //init cookiefile end
+    
+    // Filter file groups by current platform.
+    FeatureFilterOS(MEDIA, 0, ISOSL_ALL, TRUE);
+    FeatureFilterOS(MEDIA, 0, SYSINFO.nISOSL, FALSE);
+ 
+    // Filter file groups by current language.
+    FeatureFilterLanguage(MEDIA, ISLANG_ALL, TRUE);
+    FeatureFilterLanguage(MEDIA, STANDARD_SELECTED_LANGUAGE, FALSE);
+    WriteLogFile("SETUP OnFilterComponents Normal");
+    
+    //admin
+	if(!SYSINFO.WINNT.bAdmin_Logged_On) then
+	szAdminPrivilege = "Privileges : You don't have enough privilege to continue the installation, please contact the administrator. Maybe you need rerun the installation program by menu 'Run as administrator'.";
+	MessageBox(szAdminPrivilege,WARNING);
+	WriteLogFile(szAdminPrivilege);
+	abort;
+	endif;
+end;
+
+
+
+
+//---------------------------------------------------------------------------
+// OnBegin
+//
+// The OnBegin event is called directly by the framework after the setup
+// initializes.
+//---------------------------------------------------------------------------
+function OnBegin()
+begin
+	// Check if another installer is running.
+	hMutex = OpenMutexA(READ_CONTROL, FALSE, "NetBrain_RMInstaller");
+	
+	if (hMutex) then
+		CloseHandle(hMutex);
+		MessageBox("The installer is already running.", SEVERE);
+		abort;
+	else
+		hMutex = CreateMutexA(NULL, FALSE, "NetBrain_RMInstaller");
+	endif;
+
+	// TO DO: you may change default non-UI setting, for example
+	//
+	// You may also perform your custom initialization steps, check requirements, etc.
+	DialogSetInfo(DLG_INFO_ALTIMAGE, SUPPORTDIR ^ "setup_top.bmp", TRUE);
+	svFeatureRM="0";
+	svFeatureRabbitMQ="0";
+	svFeatureRedis="0";
+	svFeatureWS="0";
+	svFeatureMongodbinit="0";
+ 	svCurrentVersion="";
+ 	nvInstallDataDir = 1;
+ 	svamqpip="127.0.0.1";
+ 	//svamqpport="5672";
+ 	svredisip="127.0.0.1";
+ 	svredisport="6379";
+ 	svmongodbip="127.0.0.1";
+ 	svmongodbport="21100";
+ 	svmongodbrepicasetstring="192.168.33.82:28101,192.168.33.83:28101,192.168.33.84:28101/?replicaSet=rs";
+ 	nvCheckStandalone= 1;
+    nvCheckreplicaSet= 0;
+    listServers = ListCreate( STRINGLIST );
+    rabbitMqServers = ListCreate( STRINGLIST );
+    rabbitMqTlsVersions = ListCreate( STRINGLIST );
+    ListAddString(rabbitMqTlsVersions, "1.0", AFTER);
+    ListAddString(rabbitMqTlsVersions, "1.1", AFTER);
+    ListAddString(rabbitMqTlsVersions, "1.2", AFTER);
+                
+    rabbitMqTlsVersion="1.2";
+    svRMInstalldir=INSTALLDIR^"Worker Server";
+   	svRabbitMQInstalldir=INSTALLDIR^"RabbitMQ"; 
+   	svRedisInstalldir="C:\\Program Files\\Redis";
+   	svMongodbinitInstalldir=INSTALLDIR^"Mongodbinit";
+   	//szdumppath = INSTALLDIR^"CrashDumps"; 
+   	svinitdata="0";
+   	if (MAINTENANCE) then 
+   	if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+    RegDBGetKeyValueEx(REGROOT,REGKEY_RM,nvType,svFeatureRM,nvSize);
+    RegDBGetKeyValueEx(REGROOT,REGKEY_RABBITMQ,nvType,svFeatureRabbitMQ,nvSize);
+    RegDBGetKeyValueEx(REGROOT,REGKEY_REDIS,nvType,svFeatureRedis,nvSize);        
+    RegDBGetKeyValueEx(REGROOT,REGKEY_WS,nvType,svFeatureWS,nvSize);
+    RegDBGetKeyValueEx(REGROOT,REGKEY_INITDATA,nvType,svinitdata,nvSize);
+    RegDBGetKeyValueEx(REGROOT,REGKEY_UPGRADEDATA,nvType,svupgradedata,nvSize);
+    endif;
+    REGDB_OPTIONS = REGDB_OPTIONS & ~REGDB_OPTION_WOW64_64KEY;
+    endif;
+    endif;
+    nvInitialize = 1;
+    nvUpgrade = 0;
+    rabbitMqLocalPort="5672";
+    listMongodbiniterror = ListCreate (STRINGLIST);
+	if (ExistsDir (DUMP_PATH) != EXISTS) then
+	if (CreateDir (DUMP_PATH) < 0) then
+	WriteLogFile("Unable to create directory: "+DUMP_PATH);
+	else
+	WriteLogFile("DUMP_PATH:"+DUMP_PATH);
+	endif;
+    endif;
+    //set cluster port and epmd port,but not used temporarily
+    rabbitMqClusterPort="25672";
+    rabbitMqEmpdPort="4369";
+end;
+
+
+
+//---------------------------------------------------------------------------
+// OnFirstUIBefore
+//
+// The OnFirstUIBefore event is called by the framework when the setup is
+// running in first install mode. By default this event displays UI allowing
+// the end user to specify installation parameters.
+//---------------------------------------------------------------------------
+function OnFirstUIBefore()
+    NUMBER nResult, nSetupType, nvSize, nUser;
+    STRING szTitle, szMsg, szQuestion, svName, svCompany, szFile;
+    STRING szLicenseFile;
+	BOOL bCustom, bIgnore1, bIgnore2;
+	NUMBER  bLicenseAccepted;    	 		  //SdLicense variable
+    LIST    listData,listInfo;            	  //SdStartCopy and SdShowInfoList variable
+    NUMBER  listID,ServicePackID;             //SdShowInfoList variable
+    NUMBER  nvReturn1,nvReturn2,nvReturn3;	  //SdShowInfoList variable
+    STRING  svReturn,szInfo1,szInfo2,szInfo3; //SdShowInfoList variable
+    STRING  rightID, svSTRING;                //SdShowInfoList variable
+    //NUMBER  nUser;							  //SdCustomerInformation variable 
+    STRING  svResult1,svResult2,svResult3;    //SdFeatureDialog variable 
+    //NUMBER  nvType,nvSize;
+    NUMBER  nvType;
+    NUMBER  nBack;     
+    STRING  svTmp,szFindMe;
+    NUMBER  iResult;  
+    STRING szCaption,szDir;  
+    NUMBER nResult1,nResult2,nResult3,nResult4,nResult5,nResultMongodb;     
+    STRING svCheckWorkSpace;  
+    NUMBER nCompareFlag; 
+    STRING svCurrentVer,svCurrentDir,svResult,szIISMSG;	
+    STRING szField1,szField2;
+    NUMBER nvVar2;
+    STRING szCaption1,szCaption2;    
+    			
+begin	
+    if( REMOVEONLY ) then
+        Disable( DIALOGCACHE );
+		szMsg = SdLoadString( IDS_IFX_ERROR_PRODUCT_NOT_INSTALLED_UNINST );
+   		SdSubstituteProductInfo( szMsg );
+		MessageBox( szMsg, SEVERE );
+		abort;
+    endif;
+    
+	nSetupType = TYPICAL;
+		
+    iResult = GetDiskSpaceEx(SUPPORTDIR, GBYTES);
+    if(iResult < 3 ) then  
+    	szIISMSG = "There is no enough free space in system Driver to Extract installation file";
+    	SdShowMsg ("", FALSE); 
+    	MessageBox(szIISMSG,WARNING);
+    	abort;
+    endif;
+    nResult1=1;
+    nResult2=1;
+    nResult3=1;
+    nResult4=1;
+    nResult5=1;
+    
+    if !(svCurrentVersion = "") then 
+		FormatVer(svCurrentVersion,svCurrentVer); 
+	endif;
+		
+    DeleteFile(SUPPORTDIR ^"builddatetime.txt");   
+	RunApplication(SUPPORTDIR ^"getsystemdatetime.bat","\""+SUPPORTDIR^"builddatetime.txt"+"\"",FALSE,TRUE,TRUE);   	
+    WriteLogFile(VERSION_RM_PACKAGE_DATE + ReadString(SUPPORTDIR,"builddatetime.txt",FALSE));	
+    
+    SdShowMsg ("Checking system information", TRUE);     			   
+    SHELL_OBJECT_FOLDER = @PRODUCT_NAME;	
+    szDir = INSTALLDIR;
+    svUserName    = "Windows User";
+    szCompany = "";
+              	              
+   	WriteLogFile( MSG_INFO_BUILD_SETUPTIME ); 
+   	GetSystemInfo( DATE, nvReturn1, svResult1 );  
+   	svDataSetupTime = svResult1;
+   	svDataSetupTime = svDataSetupTime + " ";
+   	GetSystemInfo( TIME, nvReturn1, svResult1 );
+   	svDataSetupTime = svDataSetupTime + svResult1;
+ 
+Dlg_Start:
+  	SdShowMsg ("", FALSE); 
+Dlg_SdWelcome:
+    szTitle = "";
+    szMsg   = "The InstallShield Wizard will install NetBrain Worker Server on your machine. To continue the installation, click Next.";
+    nResult = SdWelcome( szTitle, szMsg );
+    if (nResult = BACK) goto Dlg_Start;  
+    WriteLogFile( MSG_INFO_STEP_OUT_WELCOME );
+    
+Dlg_SdShowInfoList:
+ 	szTitle = "System Configuration";
+    szMsg   = "The system configuration is auto-detected as follows:"; 
+    listInfo = ListCreate (STRINGLIST); 
+    //get CPU information
+    GetSystemInfo (CPU, nvReturn1, svReturn);
+    if( nvReturn1 == IS_UNKNOWN ) then
+ 		szInfo1 = "CPU:Unknown";
+    else
+    	Sprintf(szInfo1, "CPU: %d", nvReturn1,svReturn);
+    endif;
+    GetSystemInfo (EXTENDEDMEMORY, nvReturn2, svReturn);
+    Sprintf(szInfo2, "Extended Memory: %d MB", nvReturn2/1024,svReturn);
+
+    if(SYSINFO.WINNT.bAdmin_Logged_On) then
+      	rightID = "Privileges : Administrative Privileges ";
+    else
+        rightID = "Privileges : You don't have enough privilege to continue the installation, please contact the administrator. If this is Windows 2008, maybe you need rerun the installation program by menu 'Run as administrator'.";
+    endif;
+     
+    ServicePackID = SYSINFO.WINNT.nServicePack;
+    NumToStr ( svSTRING, ServicePackID );    
+    
+    if(SYSINFO.WINNT.bWinVista_Server2008=TRUE)then 
+    	szInfo3 = "Operating System: Windows 2008";
+    	if(ServicePackID >0 ) then
+    		szInfo3 =  szInfo3+" Service Pack "+   svSTRING;
+    	endif;
+    endif;
+    if(SYSINFO.WINNT.bWin7_Server2008R2=TRUE) then      
+   		szInfo3 = "Operating System: Windows 2008 R2";
+    	if(ServicePackID >0 ) then
+    		szInfo3 =  szInfo3+" Service Pack "+   svSTRING;
+    	endif;
+    endif;
+    if(SYSINFO.WINNT.bWin8=TRUE)then 
+    	szInfo3 = "Operating System: Windows 2012";
+    	if(ServicePackID >0 ) then
+    		szInfo3 =  szInfo3+" Service Pack "+   svSTRING;
+    	endif;
+    endif;
+        if(SYSINFO.WINNT.bWin81=TRUE)then 
+    	szInfo3 = "Operating System: Windows 2012 R2";
+    	if(ServicePackID >0 ) then
+    		szInfo3 =  szInfo3+" Service Pack "+   svSTRING;
+    	endif;
+    endif;
+         
+    ListAddString(listInfo, szInfo1, AFTER);
+    ListAddString(listInfo, szInfo2, AFTER);
+    ListAddString(listInfo, szInfo3, AFTER);
+    ListAddString(listInfo, rightID, AFTER); 
+    
+    nResult = SdShowInfoList ( szTitle, szMsg, listInfo );
+    ListDestroy(listInfo);
+    if(nResult = BACK) goto Dlg_SdWelcome; 
+   
+ 
+    if(rightID = "Privileges : You don't have enough privilege to continue the installation, please contact the administrator. If this is Windows 2008, maybe you need rerun the installation program by menu 'Run as administrator'.") then
+    	WriteLogFile( MSG_ERRO_CHECK_ADMIN );
+    	MessageBox(MSG_ERRO_CHECK_ADMIN,WARNING);
+        abort;
+    endif;    
+                                          
+    WriteLogFile( MSG_INFO_STEP_OUT_SYSINFO );
+ 
+Dlg_EXTENDEDMEMORY:
+	//if extended memory less than 16G=16384MB~16000MB
+    //edit by liuyang 2016.8.24 fix ENG-11961 begin
+    if ((nvReturn2/1024) < 16000) then
+    nResult = MessageBox(MSG_WARN_CHECK_EXTENDEDMEMORY, MB_YESNO );
+		if (nResult = IDNO ) then
+		abort;
+		endif;
+    endif;
+    //edit by liuyang 2016.8.24 fix ENG-11961 end
+    
+Dlg_SdLicense:    
+    szTitle    = "";
+    nResult    = SdLicenseEx ( szTitle, "", "", SUPPORTDIR ^ "license.rtf", TRUE ); 
+    if (nResult = BACK) goto Dlg_SdShowInfoList;  
+    WriteLogFile( MSG_INFO_STEP_OUT_LICENSE );
+     
+Dlg_SdCustomerInformation:
+	szTitle = "";
+	szMsg   = "";
+	nResult = SdCustomerInformation ( szTitle, svUserName, szCompany,nUser);
+	if (nResult = BACK) goto Dlg_SdLicense;      
+	WriteLogFile( MSG_INFO_STEP_OUT_CUSTOMERINFO + ":" + svUserName + ":" + szCompany   );          
+
+//new install begin
+//if( nvInstallDataDir = 1 ) then 
+            
+Dlg_SdFeatureDialog: 	
+	szTitle = "Destination Location \n";
+    szMsg   = "Click Next to install to the default folder, or click Change to choose another one. \n Install %P to:";
+    nResult = SdAskDestPath2 ( szTitle, szMsg, INSTALLDIR);     
+    szDir = INSTALLDIR;
+    if (nResult = BACK) then
+   		goto Dlg_SdCustomerInformation;  
+    endif;
+    //must be 64bit
+   	if (SYSINFO.bIsWow64) then
+		szFindMe=PROGRAMFILES; 
+
+		nResult=StrFindEx ( szDir, szFindMe, 0 );
+		if (nResult>=0)	then
+		
+		//StrReplace(szDir,szFindMe,PROGRAMFILES64,0);
+		MessageBox(MSG_INFO_32BIT_INSTALL, WARNING);
+        goto Dlg_SdFeatureDialog;	
+		endif;
+     endif;
+
+   	nResult=(szDir[1] = ":") && (szDir[2] = "\\");
+   	if(!nResult)then 
+   		Sprintf( svTempVal, MSG_ERR_PATH_FORMAT, szDir );
+   		WriteLogFile( svTempVal );
+    	MessageBox (svTempVal, WARNING);
+    	goto Dlg_SdFeatureDialog;
+    endif; 
+
+   	INSTALLDIR = szDir;   
+   	svDataDirRoot = INSTALLDIR;  
+   	
+   	svRMInstalldir=svDataDirRoot^"Worker Server";
+   	svRabbitMQInstalldir=svDataDirRoot^"RabbitMQ"; 
+   	svRedisInstalldir="C:\\Program Files\\Redis";
+   	svMongodbinitInstalldir=svDataDirRoot^"Mongodbinit"; 
+   	//szdumppath = svDataDirRoot^"CrashDumps";
+  	//dir lenth 
+  	if(StrLength(szDir)>100) then
+        MessageBox("The path is too long.", SEVERE);
+        goto Dlg_SdFeatureDialog;
+  	endif;
+  	
+  	if(CheckPathSpecChar(szDir)==0) then
+  		goto Dlg_SdFeatureDialog;
+  	endif;
+  	
+  	iResult = GetDiskSpaceEx(szDir, MBYTES);  
+  	if (iResult < DISKSPACE_M) then
+        MessageBox(DISKSPACENOTENOUGH, SEVERE);
+        goto Dlg_SdFeatureDialog;
+    endif;
+    
+     /** fix ENG-12557,ENG-12561 begin
+      	StrRemoveLastSlash (szDir);
+  	nResult = FindAllFiles( szDir, "*.*", svFileName, RESET ); 
+  	if( nResult == 0 ) then   
+  		MessageBox(  MSG_ERR_DIR_EMPTY, SEVERE);
+  		goto Dlg_SdFeatureDialog;
+  	endif;
+  	
+  	listDirs = ListCreate (STRINGLIST);
+    nResult = FindAllDirs( szDir, INCLUDE_SUBDIR, listDirs); 
+  	if( nResult == 0 && ListCount( listDirs ) > 0 ) then   
+  		MessageBox(  MSG_ERR_DIR_EMPTY, SEVERE);
+  		goto Dlg_SdFeatureDialog;
+  	endif;
+	fix ENG-12557,ENG-12561 end **/	
+  	
+   	WriteLogFile( MSG_INFO_STEP_OUT_INPUT_ROOTDIR + ":" + INSTALLDIR  );  
+
+Dlg_SdFeatureTree:                                      
+
+    szTitle    = "Application Components";
+    szMsg      = "The following four components are mandatory for setup.";   
+    
+    if (svFeatureRM="0") then
+    	FeatureSelectItem (MEDIA,FeatureRM, FALSE);
+    endif;
+     
+    if (svFeatureRabbitMQ="0") then
+    	FeatureSelectItem (MEDIA,FeatureRabbitMQ, FALSE);
+    endif;
+    
+    if (svFeatureRedis="0") then
+    	FeatureSelectItem (MEDIA,FeatureRedis, FALSE);
+    endif;
+    
+    if (svFeatureWS="0") then
+    	FeatureSelectItem (MEDIA,FeatureWS, FALSE);
+    endif;
+    
+    if (svFeatureMongodbinit="0") then
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, FALSE);
+    endif;
+    
+    if (MODE != SILENTMODE) then
+		nResult = SdFeatureTree(szTitle, szMsg, INSTALLDIR, "", 2);
+		if (nResult = BACK) goto Dlg_SdFeatureDialog;  
+	endif; 
+	 
+	nResult1 = FeatureIsItemSelected (MEDIA,FeatureRM);
+	nResult2 = FeatureIsItemSelected (MEDIA,FeatureRabbitMQ); 
+	nResult3 = FeatureIsItemSelected (MEDIA,FeatureRedis);
+	nResult4 = FeatureIsItemSelected (MEDIA,FeatureWS);
+	//nResult5 = FeatureIsItemSelected (MEDIA,FeatureMongodbinit);
+	//FeatureSelectItem (MEDIA,FeatureMongodbinit, TRUE);
+    
+    if (nResult1 = 1) then 
+    	svFeatureRM="1";
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, TRUE);    	
+    endif; 
+    
+    if (nResult2 = 1) then
+    	svFeatureRabbitMQ="1";    	
+    endif;
+    
+    if (nResult3 = 1) then
+    	svFeatureRedis="1";    	
+    endif;
+    
+    if (nResult4 = 1) then
+    	svFeatureWS="1";    	
+    endif;
+    
+    if (nResult5 = 1) then
+    	svFeatureMongodbinit="1";    	
+    endif;
+    
+     if (nResult1 = 0) then 
+    	svFeatureRM="0";
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, FALSE); 
+    endif; 
+    
+    if (nResult2 = 0) then
+    	svFeatureRabbitMQ="0";
+    endif;
+    
+    if (nResult3 = 0) then
+    	svFeatureRedis="0";
+    endif;
+    
+     if (nResult4 = 0) then
+    	svFeatureWS="0";
+    endif;
+    
+     if (nResult5 = 0) then
+    	svFeatureMongodbinit="0";
+    endif;
+
+//ENG-11069  2016.07.27 edit by liuyang begin
+    if (MODE != SILENTMODE) then
+	    if ((svFeatureRM="1") || (svFeatureRabbitMQ="1") || (svFeatureRedis="1") || (svFeatureWS="1")) then
+		    Enable (NEXTBUTTON);
+ 	    else
+	        MessageBox ("Please select at least one feature for installation", INFORMATION);
+	        goto Dlg_SdFeatureTree;
+	    endif;
+    endif;
+//ENG-11069  2016.07.27 edit by liuyang end
+
+ if (MODE = SILENTMODE) then
+
+ 	if (svFeatureRM="1") then
+    	FeatureSelectItem (MEDIA,FeatureRM, TRUE);
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, TRUE);
+    endif;
+     
+    if (svFeatureRabbitMQ="1") then
+    	FeatureSelectItem (MEDIA,FeatureRabbitMQ, TRUE);
+    endif;
+ 	
+ 	if (svFeatureRedis="1") then
+    	FeatureSelectItem (MEDIA,FeatureRedis, TRUE);
+    endif;
+    
+    if (svFeatureWS="1") then
+    	FeatureSelectItem (MEDIA,FeatureWS, TRUE);
+    endif;
+    
+    if (svFeatureMongodbinit="1") then
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, TRUE);
+    endif;
+    
+ 	if (svFeatureRM="0")&& (svFeatureRabbitMQ="0") && (svFeatureRedis="0") && (svFeatureWS="0") && (svFeatureMongodbinit="0") then  
+ 		FeatureSelectItem (MEDIA,FeatureRM, TRUE);
+		FeatureSelectItem (MEDIA, FeatureRabbitMQ, TRUE);
+		FeatureSelectItem (MEDIA, FeatureRedis, TRUE);
+		FeatureSelectItem (MEDIA, FeatureWS, TRUE);
+		FeatureSelectItem (MEDIA, FeatureMongodbinit, TRUE);
+ 	endif;  
+ 	  
+ endif;
+ 
+/* 
+  	//如果没选择Workser Server and RabbitMQ 的feature,那么直接跳转到Dlg_SdStartCopy
+if ((svFeatureRM="0") && (svFeatureRabbitMQ="0")) then
+    goto Dlg_SdStartCopy;
+endif;    
+if ((svFeatureRM="1") && (svFeatureRabbitMQ="0")) then
+	goto Dlg_SdRabbitMQServers;
+endif;
+if ((svFeatureRM="0") && (svFeatureRabbitMQ="1")) then
+	goto Dlg_SdRabbitMQ;
+endif;
+if ((svFeatureRM="1") && (svFeatureRabbitMQ="1")) then
+	goto Dlg_SdRabbitMQ;
+endif;
+*/
+
+//如果只选择了Redis的feature,那么直接跳转到Dlg_SdStartCopy;否则统一跳转到Dlg_SdRabbitMQ
+if (MODE != SILENTMODE) then
+	if ((svFeatureRM="0") && (svFeatureRabbitMQ="0") && (svFeatureWS="0") && (svFeatureRedis="1")) then
+		goto Dlg_SdStartCopy;
+	else 
+		goto Dlg_SdRabbitMQ;
+	endif; 
+endif;
+ 
+Dlg_SdRabbitMQ:
+	//szTitle = "RabbitMQ Configuration";
+    nResult = SdRabbitMQ(); 
+    if (nResult = BACK) then
+       goto Dlg_SdFeatureTree;       
+    endif;
+        
+    if (rabbitMqSsl == BUTTON_CHECKED) then
+		svrabbitmqssl = "true";
+	elseif (rabbitMqSsl == BUTTON_UNCHECKED) then
+		svrabbitmqssl = "false";
+	endif;
+    
+    //some checks begin   
+    StrTrim(rabbitMqClusterId);
+    if (StrCompare ("", rabbitMqClusterId)=0) then 
+      MessageBox ("Cluster Id of RabbitMQ can not be empty.", SEVERE);
+      goto Dlg_SdRabbitMQ;
+    endif; 
+    StrTrim(rabbitMqLocalPort);
+      if (StrCompare ("", rabbitMqLocalPort)=0) then 
+		MessageBox ("The local port number of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_SdRabbitMQ;
+      endif;
+      
+	StrToNum(nvVar2,rabbitMqLocalPort); 
+	if( nvVar2 > 65535 || nvVar2 < 100 ) then 
+		MessageBox ( "The local port number of RabbitMQ must be between 100 and 65535.", SEVERE );
+		goto Dlg_SdRabbitMQ; 
+	endif;  
+	
+	nResult = RunApplication( SystemFolder ^ "cscript.exe", "\"" + SUPPORTDIR ^ "portcheck.vbs"+"\"" + " " + rabbitMqLocalPort +" "+"\""+SUPPORTDIR ^ "netstat.txt"+"\"", FALSE,TRUE,TRUE );
+    if (nResult!=0) then 
+    	Sprintf ( svResult, MSG_ERR_PORT_INVALID, rabbitMqLocalPort); 
+    	MessageBox(svResult,WARNING);
+    	goto Dlg_SdRabbitMQ;
+    endif;   
+    DeleteFile ( SUPPORTDIR ^ "netstat.txt" );
+    //some checks end        
+	WriteLogFile("RabbitMQ ip is:"+svamqpip);
+	WriteLogFile("RabbitMQ port is:"+rabbitMqLocalPort);
+	
+	//写入注册表HKLM\SOFTWARE\NetBrain,amqp的options,用来修改fix_RMConfig.json和AmqpOption.json
+	WriteRegistryAMQPOptions();
+	
+    //如果没选择Workser Server的feature,那么直接跳转到Dlg_SdStartCopy	
+	if (svFeatureRM="0") then
+    goto Dlg_SdStartCopy;
+    endif;
+
+Dlg_SdRabbitMQServers:
+	szTitle = "RabbitMQ Servers";
+    nResult = SdRabbitMQServers(); 
+    if (nResult = BACK) then
+	   if (svFeatureRabbitMQ="1") then	
+       goto Dlg_SdRabbitMQ;
+       else
+       goto Dlg_SdFeatureTree;
+       endif;
+    endif;		
+	ListGetFirstString ( rabbitMqServers, rabbitmqnodestr );	
+	//get ip and port of rabbitmq node
+	StrTrim(rabbitmqnodestr);
+	/*
+	nLocation =StrFindEx(rabbitmqnodestr,":",0);
+	StrSub ( svamqpip, rabbitmqnodestr, 0, nLocation);
+	StrSub ( svamqpport, rabbitmqnodestr, nLocation+1, StrLength(rabbitmqnodestr));
+	*/
+	
+	
+	nResult = ListGetFirstString (rabbitMqServers, svString);
+		//svreplicasetstr = svString+",";
+		rabbitmqconnectionstr = ""; 
+        // Loop while list items continue to be retrieved.
+        while (nResult != END_OF_LIST)
+            // Display the current element.
+            //MessageBox (svString, INFORMATION);            
+            // Get the next string in the list.
+            //add some checks edit by liuyang 2016.8.25 begin
+            StrTrim(svString);
+			if (svString != "") then 
+            //if((StrFind (svString, ":")<0) || (CheckPathSpecCharSlient(svString) == 0)) then 
+            if (CheckPathSpecCharSlient(svString) == 0) then
+				MessageBox (svString+MSG_ERR_IP_PORT_SPECCHAR, WARNING);
+				goto Dlg_SdRabbitMQServers;
+            endif;
+            /*
+            nLocation =StrFindEx(svString,":",0);
+			StrSub ( svrabbitmqip, svString, 0, nLocation);
+			StrSub ( svrabbitmqport, svString, nLocation+1, StrLength(svString));
+			//nResultRabbitMQ = RunApplication( SUPPORTDIR ^ "RabbitMQ_connection.bat",svrabbitmqip, FALSE,TRUE,TRUE );
+			nResultRabbitMQ = checkIPAddress(svrabbitmqip);
+			*/
+			/*
+			nResultRabbitMQ = checkIPAddress(svString);
+			if (nResultRabbitMQ < 0) then 
+			MessageBox (svString+MSG_ERR_IP_CONNECTION, SEVERE);
+			goto Dlg_SdRabbitMQServers;
+			endif;
+			*/
+			//endif;
+            //add some checks edit by liuyang 2016.8.25 end
+            rabbitmqconnectionstr = rabbitmqconnectionstr+"\"amqp://guest:guest@"+svString+"\","; 
+            endif;
+            nResult = ListGetNextString (rabbitMqServers, svString);
+            //svreplicasetstr = svreplicasetstr+svString+",";
+        endwhile;
+	//Remove the list from memory.
+    //ListDestroy (listServers);
+    //some checks begin
+	 StrTrim(rabbitmqnodestr);
+    if (StrCompare ("", rabbitmqnodestr)=0) then 
+		MessageBox ("The servers string of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_SdRabbitMQServers;
+    endif;
+	StrTrim(rabbitmqconnectionstr);
+    if (StrCompare ("", rabbitmqconnectionstr)=0) then 
+		MessageBox ("The servers string of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_SdRabbitMQServers;
+    endif;
+    //some checks end
+    
+    StrTrim(rabbitmqnodestr);
+	StrTrim(rabbitmqconnectionstr);
+	//remove the last character ','	
+	StrSub ( rabbitmqconnectionstr, rabbitmqconnectionstr, 0, StrLength(rabbitmqconnectionstr)-1);
+    if (StrCompare ("", rabbitmqconnectionstr)=0) then 
+		MessageBox ("The servers string of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_SdRabbitMQServers;
+      endif;
+        
+	WriteLogFile("rabbitmqnodestr is:"+rabbitmqnodestr); 
+	WriteLogFile("rabbitmqconnectionstr is:"+rabbitmqconnectionstr);  
+	
+/*	
+ Dlg_CdAskAMQPIPPort:
+	szTitle = "Rabbit MQ Server Connection";
+    szMsg   = "Please input the IP address and port number of the machine where RabbitMQ will be installed.";
+    szField1 = "IP Address:"; 
+    szField2 = "Port Number:"; 
+	
+	//maybe SdShowDlgEdit3
+	nResult = SdShowDlgEdit2( szTitle, szMsg,  szField1, szField2,svamqpip,svamqpport );  
+	//SdShowDlgEdit3 ( szTitle, szMsg, szField1, szField2, szField3, svShard1port, svShard2port, svShard3port );
+	
+	if (nResult = BACK) then
+       goto Dlg_SdFeatureTree;
+    endif; 
+     //这里需要增加检测IP合法性的函数begin
+    //这里需要增加检测IP合法性的函数end	
+	  //WriteLogFile("The IP of RabbitMQ is:"+svamqpip);
+      StrTrim(svamqpip);
+      if (StrCompare ("", svamqpip)=0) then 
+		MessageBox ("The IP address of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_CdAskAMQPIPPort;
+      endif;
+		
+	  	
+      StrTrim(svamqpip);
+      if (checkIPAddress(svamqpip)<0) then 
+		MessageBox ("The IP address of RabbitMQ is illegal.", SEVERE);
+		goto Dlg_CdAskAMQPIPPort;
+      endif;
+      	  
+      StrTrim(svamqpport);
+      if (StrCompare ("", svamqpport)=0) then 
+		MessageBox ("The port number of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_CdAskAMQPIPPort;
+      endif;
+      
+	StrToNum(nvVar2,svamqpport); 
+	if( nvVar2 > 65535 || nvVar2 < 100 ) then 
+		MessageBox ( "The port number must be between 100 and 65535.", SEVERE );
+		goto Dlg_CdAskAMQPIPPort; 
+	endif;  
+	   
+    //nResult = RunApplication( SystemFolder ^ "cscript.exe", "\"" + SUPPORTDIR ^ "portcheck.vbs"+"\"" + " " + svamqpport +" "+"\""+SUPPORTDIR ^ "netstat.txt"+"\"", FALSE,TRUE,TRUE );
+
+    //if (nResult!=0) then 
+    	//Sprintf ( svResult, MSG_ERR_PORT_INVALID, svamqpport); 
+    	//MessageBox(svResult,WARNING);
+    	//goto Dlg_CdAskAMQPIPPort;
+    //endif;
+    
+    //DeleteFile ( SUPPORTDIR ^ "netstat.txt" );
+    
+    WriteLogFile("SETUP Finish Dlg_CdAskAMQPIPPort");
+    WriteLogFile("The ip of RabbitMQ is : "+svamqpip);
+    WriteLogFile("The port of RabbitMQ is : "+svamqpport);
+*/
+
+Dlg_CdAskREDISIPPort:
+	szTitle = "Redis Server Configuration";
+    szMsg   = "Please input the IP address and port number of the machine where Redis will be installed.";
+    szField1 = "IP Address:"; 
+    szField2 = "Port Number:"; 
+	
+	//maybe SdShowDlgEdit3
+	nResult = SdShowDlgEdit2( szTitle, szMsg,  szField1, szField2,svredisip,svredisport );  
+	//SdShowDlgEdit3 ( szTitle, szMsg, szField1, szField2, szField3, svShard1port, svShard2port, svShard3port );
+	
+	if (nResult = BACK) then
+       //goto Dlg_CdAskAMQPIPPort;
+       goto Dlg_SdRabbitMQServers;
+    endif; 
+     //这里需要增加检测IP合法性的函数begin
+    //这里需要增加检测IP合法性的函数end	
+	  //WriteLogFile("The IP of redis is:"+svredisip);
+      StrTrim(svredisip);
+      if (StrCompare ("", svredisip)=0) then 
+		MessageBox ("The IP address of Redis can not be empty.", SEVERE);
+		goto Dlg_CdAskREDISIPPort;
+      endif;
+    
+	 /*
+      StrTrim(svredisip);
+      if (checkIPAddress(svredisip)<0) then 
+		MessageBox ("The IP address of Redis is illegal.", SEVERE);
+		goto Dlg_CdAskREDISIPPort;
+      endif;
+    */
+	
+      StrTrim(svredisport);
+      if (StrCompare ("", svredisport)=0) then 
+		MessageBox ("The port number of Redis can not be empty.", SEVERE);
+		goto Dlg_CdAskREDISIPPort;
+      endif;
+      
+	StrToNum(nvVar2,svredisport); 
+	if( nvVar2 > 65535 || nvVar2 < 100 ) then 
+		MessageBox ( "The port number must be between 100 and 65535.", SEVERE );
+		goto Dlg_CdAskREDISIPPort; 
+	endif;  
+	/*   
+    nResult = RunApplication( SystemFolder ^ "cscript.exe", "\"" + SUPPORTDIR ^ "portcheck.vbs"+"\"" + " " + svredisport +" "+"\""+SUPPORTDIR ^ "netstat.txt"+"\"", FALSE,TRUE,TRUE );
+
+    if (nResult!=0) then 
+    	Sprintf ( svResult, MSG_ERR_PORT_INVALID, svredisport); 
+    	MessageBox(svResult,WARNING);
+    	goto Dlg_CdAskREDISIPPort;
+    endif;
+    
+    DeleteFile ( SUPPORTDIR ^ "netstat.txt" );
+    */
+    WriteLogFile("SETUP Finish Dlg_CdAskREDISIPPort");
+    WriteLogFile("The ip of Redis is : "+svredisip);
+    WriteLogFile("The port of Redis is : "+svredisport);
+
+/*    
+Dlg_CdAskMONGODBConfig:	
+	szCaption1= "Standalone"; 
+	szCaption2= "Replica Set";
+	szMsg  = "Please choose the configuration of MongoDB:";
+ 
+	SetDialogTitle ( DLG_ASK_OPTIONS, "Mongodb Configuration" );
+	//Enable(BACKBUTTON);
+	nResult= AskOptions ( EXCLUSIVE, szMsg, szCaption1, nvCheckStandalone,szCaption2,nvCheckreplicaSet); 
+	if (nResult = BACK) then 
+    	goto Dlg_CdAskREDISIPPort;
+    endif;    
+	//Disable(CANCELBUTTON);
+	WriteLogFile("SETUP Finish Dlg_CdAskMONGODBConfig");
+	if (nvCheckStandalone) then
+     	goto Dlg_CdAskMONGODBStandalone;
+    endif;
+	if (nvCheckreplicaSet) then
+		goto Dlg_CdAskMONGODBreplicaSet;
+	endif;
+*/
+
+Dlg_CdAskMONGODBConfig:	
+	szCaption1= "Initialize"; 
+	szCaption2= "Upgrade";
+	szMsg  = "Please choose to initialize data or update data:";
+ 
+	SetDialogTitle ( DLG_ASK_OPTIONS, "Mongodb Data Configuration" );
+	//Enable(BACKBUTTON);
+	nResult= AskOptions ( EXCLUSIVE, szMsg, szCaption1, nvInitialize,szCaption2,nvUpgrade); 
+	if (nResult = BACK) then 
+    	goto Dlg_CdAskREDISIPPort;
+    endif;    
+	//Disable(CANCELBUTTON);
+	WriteLogFile("SETUP Finish Dlg_CdAskMONGODBConfig");
+
+Dlg_CdAskMONGODBreplicaSet:	
+	/*
+	szTitle = "MongoDB Replica Set Connection";
+    szMsg   =  MSG_MONGODB_CONNECTION_STRING1+MSG_MONGODB_CONNECTION_STRING2+MSG_MONGODB_CONNECTION_STRING3;
+    szField1 = "Connection String:"; 
+	
+
+	nResult = SdShowDlgEdit1( szTitle, szMsg,  szField1,svmongodbrepicasetstring);  
+	if (nResult = BACK) then
+       goto Dlg_CdAskMONGODBConfig;
+    endif;
+    
+	StrTrim(svmongodbrepicasetstring);
+    if (StrCompare ("", svmongodbrepicasetstring)=0) then 
+		MessageBox ("The connection string of mongodb replicaset can not be empty.", SEVERE);
+		goto Dlg_CdAskMONGODBreplicaSet;
+      endif;
+    
+    WriteLogFile("SETUP Finish Dlg_CdAskMONGODBreplicaSet");
+    WriteLogFile("The connection string of mongodb replicaset is : "+svmongodbrepicasetstring);
+    
+    if (nResult = NEXT) then
+       goto Dlg_SdStartCopy;
+    endif;
+    */
+    szTitle = "MongoDB Server Configuration";
+    nResult = SdMongoDB(); 
+    if (nResult = BACK) then
+       goto Dlg_CdAskMONGODBConfig;
+    endif;
+        
+	NumToStr(mongodbsslstr,mongodbssl);	
+	
+	if (mongodbssl == BUTTON_CHECKED) then
+		mongodbsslstr = "true";
+	elseif (mongodbssl == BUTTON_UNCHECKED) then
+		mongodbsslstr = "false";
+	endif;
+		
+	//listServers = ListCreate( STRINGLIST );
+	ListGetFirstString ( listServers, mongoprimarynodestr );	
+	//get ip and port of mongodb primary node
+	StrTrim(mongoprimarynodestr);
+	if (StrCompare ("", mongoprimarynodestr)=0) then 
+		MessageBox ("The servers string of mongodb replicaset can not be empty.", SEVERE);
+		goto Dlg_CdAskMONGODBreplicaSet;
+     endif;
+	nLocation =StrFindEx(mongoprimarynodestr,":",0);
+	StrSub ( svMongodbprimaryIP, mongoprimarynodestr, 0, nLocation);
+	StrSub ( svMongodbprimaryPort, mongoprimarynodestr, nLocation+1, StrLength(mongoprimarynodestr));
+	
+	
+	nResult = ListGetFirstString (listServers, svString);
+		//svreplicasetstr = svString+",";
+		svreplicasetstr = ""; 
+        // Loop while list items continue to be retrieved.
+        while (nResult != END_OF_LIST)
+            // Display the current element.
+            //MessageBox (svString, INFORMATION);            
+            // Get the next string in the list.
+            //fix Bug ENG-12694 2016.8.19 edit by liuyang begin
+			StrTrim(svString);
+			if (svString != "") then 
+			if((StrFind (svString, ":")<0) || (CheckPathSpecCharSlient(svString) == 0)) then 
+				MessageBox (svString+MSG_ERR_IP_PORT_SPECCHAR, WARNING);
+				goto Dlg_CdAskMONGODBreplicaSet;
+            endif; 
+			nResultMongodb = RunApplication( SUPPORTDIR ^ "Mongodb_connetion_new.bat",svString, FALSE,TRUE,TRUE );
+			if (nResultMongodb != 0) then 
+			MessageBox ("Can not connect the mongodb node: "+svString, SEVERE);
+			goto Dlg_CdAskMONGODBreplicaSet;
+			endif;
+			endif;
+			//fix Bug ENG-12694 2016.8.19 edit by liuyang end
+            svreplicasetstr = svreplicasetstr+svString+","; 
+            nResult = ListGetNextString (listServers, svString);
+            //svreplicasetstr = svreplicasetstr+svString+",";
+        endwhile;
+	//Remove the list from memory.
+    //ListDestroy (listServers);
+    
+	StrTrim(svreplicasetstr);
+    if (StrCompare ("", svreplicasetstr)=0) then 
+		MessageBox ("The servers string of mongodb replicaset can not be empty.", SEVERE);
+		goto Dlg_CdAskMONGODBreplicaSet;
+      endif;
+      
+	//change the last "," to be "/?replicaSet=rsname"	
+    StrReplace ( svreplicasetstr,",", "/?replicaSet="+replicaSetName, StrLength(svreplicasetstr)-1);
+   
+    //MessageBox("svreplicasetstr is:"+svreplicasetstr,INFORMATION);  
+    //MessageBox("mongoprimarynodeip is:"+svMongodbprimaryIP+" and mongoprimarynodeport is:"+svMongodbprimaryPort,INFORMATION);     
+    WriteLogFile("replicaSetName is:"+replicaSetName); 
+    WriteLogFile("username is:"+mongodbusername);
+    WriteLogFile("password is:"+mongodbpassword);
+	WriteLogFile("ssl is:"+mongodbsslstr);
+	WriteLogFile("mongoprimarynodestr is:"+mongoprimarynodestr);
+	WriteLogFile("mongoprimarynodeip is:"+mongoprimarynodestr);
+	WriteLogFile("mongoprimarynodeport is:"+mongoprimarynodestr);
+	WriteLogFile("svreplicasetstr is:"+svreplicasetstr);
+    
+    if (nResult = NEXT) then
+       goto Dlg_SdStartCopy;
+    endif;
+    
+/*    
+Dlg_CdAskMONGODBStandalone:
+	szTitle = "MongoDB Server Configuration";
+    szMsg   = "Please input the IP address and port number of the machine where MongoDB will be installed.";
+    szField1 = "IP Address:"; 
+    szField2 = "Port Number:"; 
+	
+	//maybe SdShowDlgEdit3
+	nResult = SdShowDlgEdit2( szTitle, szMsg,  szField1, szField2,svmongodbip,svmongodbport);  
+	//SdShowDlgEdit3 ( szTitle, szMsg, szField1, szField2, szField3, svShard1port, svShard2port, svShard3port );
+	
+	if (nResult = BACK) then
+       goto Dlg_CdAskMONGODBConfig;
+    endif; 
+     //这里需要增加检测IP合法性的函数begin
+    //这里需要增加检测IP合法性的函数end	
+	  //WriteLogFile("The IP of mongodb is:"+svmongodbip);
+      StrTrim(svmongodbip);
+      if (StrCompare ("", svmongodbip)=0) then 
+		MessageBox ("The IP address of mongodb can not be empty.", SEVERE);
+		goto Dlg_CdAskMONGODBStandalone;
+      endif;
+          
+       StrTrim(svmongodbport);
+      if (StrCompare ("", svmongodbport)=0) then 
+		MessageBox ("The port number of mongodb can not be empty.", SEVERE);
+		goto Dlg_CdAskMONGODBStandalone;
+      endif;
+      
+	StrToNum(nvVar2,svmongodbport); 
+	if( nvVar2 > 65535 || nvVar2 < 100 ) then 
+		MessageBox ( "The port number must be between 100 and 65535.", SEVERE );
+		goto Dlg_CdAskMONGODBStandalone; 
+	endif;  
+	
+	//fix Bug ENG-8750 2016.5.23 edit by liuyang begin
+      StrTrim(svmongodbip);
+      nResult = RunApplication( SUPPORTDIR ^ "Mongodb_connetion.bat",svmongodbip+" "+svmongodbport, FALSE,TRUE,TRUE );
+      if (nResult!=0) then 
+		MessageBox ("The IP address of mongodb is illegal.", SEVERE);
+		goto Dlg_CdAskMONGODBStandalone;
+      endif;
+      //fix Bug ENG-8750 2016.5.23 edit by liuyang end
+	   
+    //nResult = RunApplication( SystemFolder ^ "cscript.exe", "\"" + SUPPORTDIR ^ "portcheck.vbs"+"\"" + " " + svmongodbport +" "+"\""+SUPPORTDIR ^ "netstat.txt"+"\"", FALSE,TRUE,TRUE );
+
+    //if (nResult!=0) then 
+    	//Sprintf ( svResult, MSG_ERR_PORT_INVALID, svmongodbport); 
+    	//MessageBox(svResult,WARNING);
+    	//goto Dlg_CdAskMONGODBStandalone;
+    //endif;
+    
+    //DeleteFile ( SUPPORTDIR ^ "netstat.txt" );
+    
+    WriteLogFile("SETUP Finish Dlg_CdAskMONGODBStandalone");
+    WriteLogFile("The ip of mongodb is : "+svmongodbip);
+    WriteLogFile("The port of mongodb is : "+svmongodbport);        
+    // Added in IS 2009 - Set appropriate StatusEx static text.
+    //SetStatusExStaticText( SdLoadString( IDS_IFX_STATUSEX_STATICTEXT_FIRSTUI ) );
+
+    // setup default status
+    //Enable(STATUSEX);
+ */
+ 
+ Dlg_SdStartCopy:
+    szTitle = "Ready to install NetBrain Integrated Edition";
+    szMsg   = "Review the following information before clicking Install to start copying files.";
+    listData = ListCreate( STRINGLIST );  
+    ListAddString(listData, "Destination Directory:", AFTER);
+    ListAddString(listData, "              " + INSTALLDIR, AFTER);
+    //ListAddString (listData, "", AFTER);
+    ListAddString (listData, "User Information: ", AFTER);
+    ListAddString (listData, "              "+"User Name:" + svUserName, AFTER);
+    ListAddString (listData, "              "+"Company Name:" + szCompany, AFTER);
+    //add installed features info edit by liuyang 2016.05.19 begin
+    ListAddString (listData, "Installed Components: ", AFTER);
+    if (svFeatureRabbitMQ="1") then
+    	ListAddString (listData, "              "+ FeatureRabbitMQ, AFTER);
+    endif;
+    if (svFeatureRedis="1") then
+    	ListAddString (listData, "              "+ FeatureRedis, AFTER);
+    endif;
+    if (svFeatureRM="1") then
+    	ListAddString (listData, "              "+ "Worker Server", AFTER);
+    endif;
+    if (svFeatureWS="1") then
+    	ListAddString (listData, "              "+ "Web Server", AFTER);
+    endif;
+    //add installed features info edit by liuyang 2016.05.19 end
+    ListAddString (listData, "", AFTER);
+                                           
+    nResult = SdStartCopy( szTitle, szMsg, listData );	
+    //ListDestroy(listData);
+    //fix Bug ENG-9370 edit by liuyang 2016.06.02 begin:如果安装了RM的feature，那么后退到mongodb的ip和port的输入页面；没安装RM，跳转到钩选feature的页面 
+    if (nResult = BACK) then		
+		if (svFeatureRM="1") then
+		/* 			
+		if (nvCheckStandalone) then
+     	goto Dlg_CdAskMONGODBStandalone;
+     	endif;
+		if (nvCheckreplicaSet) then
+		goto Dlg_CdAskMONGODBreplicaSet;
+		endif;
+		*/
+		goto Dlg_CdAskMONGODBreplicaSet;
+ 		else
+			goto Dlg_SdFeatureTree;
+ 		endif;
+    endif;
+    //fix Bug ENG-9370 edit by liuyang 2016.06.02 end	
+    ListDestroy(listData);
+   	WriteLogFile( MSG_INFO_STEP_OUT_STARTCOPY ); 
+   	
+   	Disable(CANCELBUTTON);
+    // Added in IS 2009 - Set appropriate StatusEx static text.
+    SetStatusExStaticText(INSTALLSTATUS);
+	
+	NumToStr(svFeatureRM,nResult1);
+	NumToStr(svFeatureRabbitMQ,nResult2);
+	NumToStr(svFeatureRedis,nResult3);
+	NumToStr(svFeatureWS,nResult4);
+	if ( svFeatureRM = "0") then
+	nvInitialize = 0;
+	nvUpgrade = 0;
+	endif;	
+	NumToStr(svinitdata,nvInitialize);
+	NumToStr(svupgradedata,nvUpgrade);
+    // setup default status
+    Enable(STATUSEX);
+    return 0;
+end;
+
+//---------------------------------------------------------------------------
+// OnMaintUIBefore
+//
+// The OnMaintUIBefore event is called by the framework when the setup is
+// running in maintenance mode. By default this event displays UI that
+// allows the end user to add or remove features, repair currently
+// installed features or uninstall the application.
+//---------------------------------------------------------------------------
+function OnMaintUIBefore()
+	NUMBER nResult, nType, nvSize, nvType;
+    STRING szTitle, szMsg, svResult, szCaption; 
+    STRING svResult1,svResult2,svResult3;    //SdFeatureDialog variable    
+    NUMBER nvPostgresSelected;   
+    NUMBER nReturn;  
+    NUMBER nResult1,nResult2,nResult3,nResult4;
+    STRING szCaption1,szCaption2;  
+    STRING szField1,szField2;
+    NUMBER nvVar2;
+begin  
+//可能需要改写，检查web_server和web_client的exe，如果有的话  
+//OnCheckProgramRun();
+	
+Dlg_Start:
+	 if(SYSINFO.WINNT.bAdmin_Logged_On == FALSE) then
+        WriteLogFile( MSG_ERRO_CHECK_ADMIN );
+    	MessageBox(MSG_ERRO_CHECK_ADMIN,WARNING);
+        abort;
+     endif;
+
+Dlg_SdFeatureTree: 
+	/*
+  	nResult1 = FeatureIsItemSelected (MEDIA,FeatureRM);
+	nResult2 = FeatureIsItemSelected (MEDIA,FeatureRabbitMQ); 
+	nResult3 = FeatureIsItemSelected (MEDIA,FeatureRedis);
+	nResult4 = FeatureIsItemSelected (MEDIA,FeatureWS);
+	NumToStr(svResult1,nResult1);
+	WriteLogFile("nResult1 ="+svResult1);
+	if (nResult1 = 1) then     	
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, TRUE);    	
+    endif;
+    if (nResult1 = 0) then     	
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, FALSE);    	
+    endif;
+    */
+       
+    szTitle    = "";
+    szMsg      = ""; 
+    Disable(BACKBUTTON);
+	
+	
+	if( REMOVEONLY ) then
+        
+        //Disable( DIALOGCACHE );
+        FeatureSelectItem (MEDIA, FeatureRM, FALSE);
+       	FeatureSelectItem (MEDIA, FeatureRabbitMQ, FALSE); 
+       	FeatureSelectItem (MEDIA, FeatureRedis, FALSE);
+       	FeatureSelectItem (MEDIA, FeatureWS, FALSE);
+       	FeatureSelectItem (MEDIA, FeatureMongodbinit, FALSE);
+       	//svWSSInstalldir=INSTALLDIR^"nb_publish_server";
+   	    //svWSCInstalldir=INSTALLDIR^"nb_publish_client"; 
+       	 
+    else		
+        szTitle = SdLoadString(IFX_SDFINISH_MAINT_TITLE);    
+        szMsg  = SdLoadString(IFX_SDFINISH_MAINT_MSG1); 
+        nResult = SdFeatureTree(szTitle, szMsg, INSTALLDIR, "", 2); 
+        if (nResult = BACK) goto Dlg_Start;          
+        /*
+        MessageBox (MSG_INFO_REPEAT_INSTALL, INFORMATION);
+ 	    abort;
+ 	    */
+ 	nResult1 = FeatureIsItemSelected (MEDIA,FeatureRM);
+	nResult2 = FeatureIsItemSelected (MEDIA,FeatureRabbitMQ); 
+	nResult3 = FeatureIsItemSelected (MEDIA,FeatureRedis);
+	nResult4 = FeatureIsItemSelected (MEDIA,FeatureWS);
+	//NumToStr(svResult1,nResult1);
+	//WriteLogFile("nResult1 ="+svResult1);	
+	if (nResult1 = 1) then
+		if (svFeatureRM= "1") then 
+		    if ((nResult2 = 1) && (svFeatureRabbitMQ = "0")) then 
+				goto Dlg_SdRabbitMQ; 
+			endif;
+			if ((nResult3 = 1) && (svFeatureRedis = "0")) then 
+				goto Dlg_CdAskREDISIPPort; 
+			endif;
+			if ((nResult4 = 1) && (svFeatureWS = "0")) then 
+				goto Dlg_SdStartCopy; 
+			endif;		
+		goto Dlg_SdStartCopy;
+		else 
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, TRUE);
+    	//goto Dlg_CdAskMONGODBConfig; 
+    	if ((nResult2 = 1) && (svFeatureRabbitMQ = "0")) then 
+			goto Dlg_SdRabbitMQ; 
+		endif;
+    	goto Dlg_SdRabbitMQ;
+    	endif;   	
+    endif;
+    if (nResult1 = 0) then     	
+    	FeatureSelectItem (MEDIA,FeatureMongodbinit, FALSE);
+    if ((nResult2 = 1) && (svFeatureRabbitMQ = "0")) then 
+      	 goto Dlg_SdRabbitMQ; 
+	endif;
+    if ((nResult3 = 1) && (svFeatureRedis = "0")) then 
+      	 goto Dlg_CdAskREDISIPPort; 
+	endif;
+	if ((nResult4 = 1) && (svFeatureWS = "0")) then 
+      	 goto Dlg_SdRabbitMQ; 
+	endif;	
+    	goto Dlg_SdStartCopy;    	
+    endif;
+    
+Dlg_SdRabbitMQ:
+	Enable(BACKBUTTON);
+	//szTitle = "RabbitMQ Configuration";
+    nResult = SdRabbitMQ(); 
+    if (nResult = BACK) then
+       goto Dlg_SdFeatureTree;       
+    endif;
+        
+    if (rabbitMqSsl == BUTTON_CHECKED) then
+		svrabbitmqssl = "true";
+	elseif (rabbitMqSsl == BUTTON_UNCHECKED) then
+		svrabbitmqssl = "false";
+	endif;
+    
+    //some checks begin   
+    StrTrim(rabbitMqClusterId);
+    if (StrCompare ("", rabbitMqClusterId)=0) then 
+      MessageBox ("Cluster Id of RabbitMQ can not be empty.", SEVERE);
+      goto Dlg_SdRabbitMQ;
+    endif; 
+    StrTrim(rabbitMqLocalPort);
+      if (StrCompare ("", rabbitMqLocalPort)=0) then 
+		MessageBox ("The local port number of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_SdRabbitMQ;
+      endif;
+      
+	StrToNum(nvVar2,rabbitMqLocalPort); 
+	if( nvVar2 > 65535 || nvVar2 < 100 ) then 
+		MessageBox ( "The local port number of RabbitMQ must be between 100 and 65535.", SEVERE );
+		goto Dlg_SdRabbitMQ; 
+	endif;
+	
+	nResult = RunApplication( SystemFolder ^ "cscript.exe", "\"" + SUPPORTDIR ^ "portcheck.vbs"+"\"" + " " + rabbitMqLocalPort +" "+"\""+SUPPORTDIR ^ "netstat.txt"+"\"", FALSE,TRUE,TRUE );
+    if (nResult!=0) then 
+    	Sprintf ( svResult, MSG_ERR_PORT_INVALID, rabbitMqLocalPort); 
+    	MessageBox(svResult,WARNING);
+    	goto Dlg_SdRabbitMQ;
+    endif;   
+    DeleteFile ( SUPPORTDIR ^ "netstat.txt" );    
+    //some checks end        
+	WriteLogFile("RabbitMQ ip is:"+svamqpip);
+	WriteLogFile("RabbitMQ port is:"+svamqpport);
+	//写入注册表HKLM\SOFTWARE\NetBrain,amqp的options,用来修改fix_RMConfig.json和AmqpOption.json
+	WriteRegistryAMQPOptions();
+	
+    //如果没选择Workser Server的feature,那么直接跳转到Dlg_SdStartCopy	
+	if (nResult1 = 0) then
+    goto Dlg_SdStartCopy;
+    endif;
+    
+Dlg_SdRabbitMQServers:
+	Enable(BACKBUTTON);
+	szTitle = "RabbitMQ Servers";
+    nResult = SdRabbitMQServers(); 
+    if (nResult = BACK) then
+	   if ((nResult2 = 1) && (svFeatureRabbitMQ = "0")) then	
+       goto Dlg_SdRabbitMQ;
+       else
+       goto Dlg_SdFeatureTree;
+       endif;
+    endif;		
+	ListGetFirstString ( rabbitMqServers, rabbitmqnodestr );	
+	//get ip and port of rabbitmq node
+	StrTrim(rabbitmqnodestr);
+	/*
+	nLocation =StrFindEx(rabbitmqnodestr,":",0);
+	StrSub ( svamqpip, rabbitmqnodestr, 0, nLocation);
+	StrSub ( svamqpport, rabbitmqnodestr, nLocation+1, StrLength(rabbitmqnodestr));
+	*/
+	
+	nResult = ListGetFirstString (rabbitMqServers, svString);
+		//svreplicasetstr = svString+",";
+		rabbitmqconnectionstr = ""; 
+        // Loop while list items continue to be retrieved.
+        while (nResult != END_OF_LIST)
+            // Display the current element.
+            //MessageBox (svString, INFORMATION);            
+            // Get the next string in the list.
+            //add some checks edit by liuyang 2016.8.25 begin
+            StrTrim(svString);
+			if (svString != "") then 
+            //if((StrFind (svString, ":")<0) || (CheckPathSpecCharSlient(svString) == 0)) then 
+            if (CheckPathSpecCharSlient(svString) == 0) then 
+				MessageBox (svString+MSG_ERR_IP_PORT_SPECCHAR, WARNING);
+				goto Dlg_SdRabbitMQServers;
+            endif;
+            /*
+            nLocation =StrFindEx(svString,":",0);
+			StrSub ( svrabbitmqip, svString, 0, nLocation);
+			StrSub ( svrabbitmqport, svString, nLocation+1, StrLength(svString));
+			//nResultRabbitMQ = RunApplication( SUPPORTDIR ^ "RabbitMQ_connection.bat",svrabbitmqip, FALSE,TRUE,TRUE );
+			nResultRabbitMQ = checkIPAddress(svrabbitmqip);
+			*/
+			
+			/*
+			nResultRabbitMQ = checkIPAddress(svString);
+			if (nResultRabbitMQ < 0) then 
+			MessageBox (svString+MSG_ERR_IP_CONNECTION, SEVERE);
+			goto Dlg_SdRabbitMQServers;
+			endif;
+			*/
+			//endif;
+            //add some checks edit by liuyang 2016.8.25 end 
+            rabbitmqconnectionstr = rabbitmqconnectionstr+"\"amqp://guest:guest@"+svString+"\","; 
+            endif;
+            nResult = ListGetNextString (rabbitMqServers, svString);
+            //svreplicasetstr = svreplicasetstr+svString+",";
+        endwhile;
+	//Remove the list from memory.
+    //ListDestroy (listServers);
+    //some checks begin
+	 StrTrim(rabbitmqnodestr);
+    if (StrCompare ("", rabbitmqnodestr)=0) then 
+		MessageBox ("The servers string of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_SdRabbitMQServers;
+    endif;
+	StrTrim(rabbitmqconnectionstr);
+    if (StrCompare ("", rabbitmqconnectionstr)=0) then 
+		MessageBox ("The servers string of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_SdRabbitMQServers;
+    endif;
+    //some checks end
+    
+    StrTrim(rabbitmqnodestr);
+	StrTrim(rabbitmqconnectionstr);
+	//remove the last character ','	
+	StrSub ( rabbitmqconnectionstr, rabbitmqconnectionstr, 0, StrLength(rabbitmqconnectionstr)-1);
+    if (StrCompare ("", rabbitmqconnectionstr)=0) then 
+		MessageBox ("The servers string of RabbitMQ can not be empty.", SEVERE);
+		goto Dlg_SdRabbitMQServers;
+      endif;
+        
+	WriteLogFile("rabbitmqnodestr is:"+rabbitmqnodestr); 
+	WriteLogFile("rabbitmqconnectionstr is:"+rabbitmqconnectionstr);
+	//如果没选择Workser Server的feature,那么直接跳转到Dlg_SdStartCopy	
+	if (nResult1 = 0) then
+    goto Dlg_SdStartCopy;
+    endif;
+        
+Dlg_CdAskREDISIPPort:
+	Enable(BACKBUTTON);
+	szTitle = "Redis Server Configuration";
+    szMsg   = "Please input the IP address and port number of the machine where Redis will be installed.";
+    szField1 = "IP Address:"; 
+    szField2 = "Port Number:"; 
+	
+	//maybe SdShowDlgEdit3
+	nResult = SdShowDlgEdit2( szTitle, szMsg,  szField1, szField2,svredisip,svredisport );  
+	//SdShowDlgEdit3 ( szTitle, szMsg, szField1, szField2, szField3, svShard1port, svShard2port, svShard3port );
+	
+	if (nResult = BACK) then
+	   if ((nResult1 = 1) && (svFeatureRM = "0")) then	
+       goto Dlg_SdRabbitMQServers;
+       else
+       goto Dlg_SdFeatureTree;
+       endif;
+    endif; 
+     //这里需要增加检测IP合法性的函数begin
+    //这里需要增加检测IP合法性的函数end	
+	  //WriteLogFile("The IP of redis is:"+svredisip);
+      StrTrim(svredisip);
+      if (StrCompare ("", svredisip)=0) then 
+		MessageBox ("The IP address of Redis can not be empty.", SEVERE);
+		goto Dlg_CdAskREDISIPPort;
+      endif;
+    
+	/*
+      StrTrim(svredisip);
+      if (checkIPAddress(svredisip)<0) then 
+		MessageBox ("The IP address of Redis is illegal.", SEVERE);
+		goto Dlg_CdAskREDISIPPort;
+      endif;
+    */
+	
+      StrTrim(svredisport);
+      if (StrCompare ("", svredisport)=0) then 
+		MessageBox ("The port number of Redis can not be empty.", SEVERE);
+		goto Dlg_CdAskREDISIPPort;
+      endif;
+      
+	StrToNum(nvVar2,svredisport); 
+	if( nvVar2 > 65535 || nvVar2 < 100 ) then 
+		MessageBox ( "The port number must be between 100 and 65535.", SEVERE );
+		goto Dlg_CdAskREDISIPPort; 
+	endif;  
+	/*   
+    nResult = RunApplication( SystemFolder ^ "cscript.exe", "\"" + SUPPORTDIR ^ "portcheck.vbs"+"\"" + " " + svredisport +" "+"\""+SUPPORTDIR ^ "netstat.txt"+"\"", FALSE,TRUE,TRUE );
+
+    if (nResult!=0) then 
+    	Sprintf ( svResult, MSG_ERR_PORT_INVALID, svredisport); 
+    	MessageBox(svResult,WARNING);
+    	goto Dlg_CdAskREDISIPPort;
+    endif;
+    
+    DeleteFile ( SUPPORTDIR ^ "netstat.txt" );
+    */
+    WriteLogFile("SETUP Finish Dlg_CdAskREDISIPPort");
+    WriteLogFile("The ip of Redis is : "+svredisip);
+    WriteLogFile("The port of Redis is : "+svredisport);
+    //如果没选择Workser Server的feature,那么直接跳转到Dlg_SdStartCopy	
+	if (nResult1 = 0) then
+    goto Dlg_SdStartCopy;
+    endif;
+    
+Dlg_CdAskMONGODBConfig:	
+    Enable(BACKBUTTON);
+	szCaption1= "Initialize"; 
+	szCaption2= "Upgrade";
+	szMsg  = "Please choose to initialize data or update data:";
+ 
+	SetDialogTitle ( DLG_ASK_OPTIONS, "Mongodb Data Configuration" );
+	//Enable(BACKBUTTON);
+	nResult= AskOptions ( EXCLUSIVE, szMsg, szCaption1, nvInitialize,szCaption2,nvUpgrade); 
+	if (nResult = BACK) then 
+    	goto Dlg_CdAskREDISIPPort;
+    endif;    
+	//Disable(CANCELBUTTON);
+	WriteLogFile("SETUP Finish Dlg_CdAskMONGODBConfig");
+    
+Dlg_CdAskMONGODBreplicaSet:
+	Enable(BACKBUTTON);	
+    szTitle = "MongoDB Server Configuration";
+    nResult = SdMongoDB(); 
+    if (nResult = BACK) then
+       goto Dlg_CdAskMONGODBConfig;
+    endif;
+        
+	NumToStr(mongodbsslstr,mongodbssl);	
+	
+	if (mongodbssl == BUTTON_CHECKED) then
+		mongodbsslstr = "true";
+	elseif (mongodbssl == BUTTON_UNCHECKED) then
+		mongodbsslstr = "false";
+	endif;
+		
+	//listServers = ListCreate( STRINGLIST );
+	ListGetFirstString ( listServers, mongoprimarynodestr );	
+	//get ip and port of mongodb primary node
+	StrTrim(mongoprimarynodestr);
+	nLocation =StrFindEx(mongoprimarynodestr,":",0);
+	StrSub ( svMongodbprimaryIP, mongoprimarynodestr, 0, nLocation);
+	StrSub ( svMongodbprimaryPort, mongoprimarynodestr, nLocation+1, StrLength(mongoprimarynodestr));
+	
+	
+	nResult = ListGetFirstString (listServers, svString);
+		//svreplicasetstr = svString+",";
+		svreplicasetstr = ""; 
+        // Loop while list items continue to be retrieved.
+        while (nResult != END_OF_LIST)
+            // Display the current element.
+            //MessageBox (svString, INFORMATION);            
+            // Get the next string in the list.
+            //fix Bug ENG-12694 2016.8.19 edit by liuyang begin
+			StrTrim(svString);
+			if (svString != "") then 
+			if((StrFind (svString, ":")<0) || (CheckPathSpecCharSlient(svString) == 0)) then 
+				MessageBox (svString+MSG_ERR_IP_PORT_SPECCHAR, WARNING);
+				goto Dlg_CdAskMONGODBreplicaSet;
+            endif; 
+			nResultMongodb = RunApplication( SUPPORTDIR ^ "Mongodb_connetion_new.bat",svString, FALSE,TRUE,TRUE );
+			if (nResultMongodb != 0) then 
+			//MessageBox ("Cannot connect the mongodb node: "+svString, SEVERE);
+			MessageBox (svString+MSG_ERR_IP_CONNECTION, SEVERE);
+			goto Dlg_CdAskMONGODBreplicaSet;
+			endif;
+			endif;
+			//fix Bug ENG-12694 2016.8.19 edit by liuyang end
+            svreplicasetstr = svreplicasetstr+svString+","; 
+            nResult = ListGetNextString (listServers, svString);
+            //svreplicasetstr = svreplicasetstr+svString+",";
+        endwhile;
+	//Remove the list from memory.
+    //ListDestroy (listServers);
+    
+	StrTrim(svreplicasetstr);
+    if (StrCompare ("", svreplicasetstr)=0) then 
+		MessageBox ("The servers string of mongodb replicaset can not be empty.", SEVERE);
+		goto Dlg_CdAskMONGODBreplicaSet;
+      endif;
+      
+	//change the last "," to be "/?replicaSet=rsname"	
+    StrReplace ( svreplicasetstr,",", "/?replicaSet="+replicaSetName, StrLength(svreplicasetstr)-1);
+   
+    //MessageBox("svreplicasetstr is:"+svreplicasetstr,INFORMATION);  
+    //MessageBox("mongoprimarynodeip is:"+svMongodbprimaryIP+" and mongoprimarynodeport is:"+svMongodbprimaryPort,INFORMATION);     
+    WriteLogFile("replicaSetName is:"+replicaSetName); 
+    WriteLogFile("username is:"+mongodbusername);
+    WriteLogFile("password is:"+mongodbpassword);
+	WriteLogFile("ssl is:"+mongodbsslstr);
+	WriteLogFile("mongoprimarynodestr is:"+mongoprimarynodestr);
+	WriteLogFile("mongoprimarynodeip is:"+mongoprimarynodestr);
+	WriteLogFile("mongoprimarynodeport is:"+mongoprimarynodestr);
+	WriteLogFile("svreplicasetstr is:"+svreplicasetstr);
+	
+Dlg_SdStartCopy:
+	Enable(BACKBUTTON);
+	szTitle = "Ready to maintaince NetBrain Integrated Edition";
+    szMsg   = "Review the following information before clicking Install to start copying files.";
+    listData = ListCreate( STRINGLIST );  
+    ListAddString(listData, "Destination Directory:", AFTER);
+    ListAddString(listData, "              " + INSTALLDIR, AFTER);
+    //ListAddString (listData, "", AFTER);
+    ListAddString (listData, "User Information: ", AFTER);
+    ListAddString (listData, "              "+"User Name:" + svUserName, AFTER);
+    ListAddString (listData, "              "+"Company Name:" + szCompany, AFTER);
+    //add installed features info edit by liuyang 2016.05.19 begin
+    ListAddString (listData, "Installed Components: ", AFTER);
+    if (nResult2 = 1) then
+    	ListAddString (listData, "              "+ FeatureRabbitMQ, AFTER);
+    endif;
+    if (nResult3 = 1) then
+    	ListAddString (listData, "              "+ FeatureRedis, AFTER);
+    endif;
+    if (nResult1= 1) then
+    	ListAddString (listData, "              "+ "Worker Server", AFTER);
+    endif;
+    if (nResult4 = 1) then
+    	ListAddString (listData, "              "+ "Web Server", AFTER);
+    endif;
+    //add installed features info edit by liuyang 2016.05.19 end
+    //ListAddString (listData, "", AFTER);
+    ListAddString (listData, "Uninstalled Components: ", AFTER);   
+    if (nResult2 = 0) then
+    	ListAddString (listData, "              "+ FeatureRabbitMQ, AFTER);
+    endif;
+    if (nResult3 = 0) then
+    	ListAddString (listData, "              "+ FeatureRedis, AFTER);
+    endif;
+    if (nResult1= 0) then
+    	ListAddString (listData, "              "+ "Worker Server", AFTER);
+    endif;
+    if (nResult4 = 0) then
+    	ListAddString (listData, "              "+ "Web Server", AFTER);
+    endif;
+                                           
+    nResult = SdStartCopy( szTitle, szMsg, listData );	
+    if (nResult = BACK) then
+       goto Dlg_SdFeatureTree;
+    endif;
+    ListDestroy(listData);
+    
+RemoveFeatures:	
+    if  ((nResult1 !=1 && svFeatureRM = "1") || (nResult2 !=1 && svFeatureRabbitMQ = "1") || (nResult3 !=1 && svFeatureRedis = "1") || (nResult4 !=1 && svFeatureWS = "1")) then    
+	szMsg  = "Are you sure you want to remove the feature of NetBrain Integrated Edition?";
+    Enable(BACKBUTTON);
+	 if ( REMOVEALL ) then
+		nResult = MessageBox(szMsg, MB_YESNO );
+		if (nResult != IDYES ) then
+            
+            if( REMOVEONLY ) then
+                // In REMOVEONLY mode, abort the setup.
+                abort;
+            else
+                // In non-REMOVEONLY mode, redisplay the previous dialog.
+			    goto Dlg_SdStartCopy;
+            endif;
+
+		endif;
+	endif;
+    endif;    
+         
+	Disable(CANCELBUTTON);
+    nResult = NEXT;  
+	SdShowMsg ("Removing, please wait...", TRUE); 
+	SdShowMsg ("", FALSE);   
+	//DeleteRegistryWeb();
+	NumToStr(svFeatureRM,nResult1);
+	NumToStr(svFeatureRabbitMQ,nResult2);
+	NumToStr(svFeatureRedis,nResult3);
+	NumToStr(svFeatureWS,nResult4);	
+    if ( svFeatureRM = "0") then
+	nvInitialize = 0;
+	nvUpgrade = 0;
+	endif;	
+	NumToStr(svinitdata,nvInitialize);
+	NumToStr(svupgradedata,nvUpgrade);
+    endif;
+	   		
+    Enable(STATUSEX);
+end;
+
+//---------------------------------------------------------------------------
+// OnMaintUIAfter
+//
+// The OnMaintUIAfter event called by the framework after the file transfer
+// of the setup when the setup is running in maintenance mode. By default
+// this event displays UI that informs the end user that the maintenance setup
+// has been completed successfully.
+//---------------------------------------------------------------------------
+/*
+function OnMaintUIAfter()
+    STRING szTitle, szMsg1, szMsg2, szOpt1, szOpt2;
+    NUMBER bOpt1, bOpt2;
+begin
+	Disable(STATUSEX);
+    
+    if( REMOVEALLMODE ) then
+        szTitle = SdLoadString(IFX_SDFINISH_REMOVE_TITLE);
+        szMsg1 = "NetBrain Integrated Edition has been successfully uninstalled.";
+    else
+        szTitle = SdLoadString(IFX_SDFINISH_MAINT_TITLE);    
+        szMsg1  = SdLoadString(IFX_SDFINISH_MAINT_MSG1);
+    endif;
+
+	bOpt1   = FALSE;
+    bOpt2   = FALSE;    
+	
+	Enable(CANCELBUTTON);
+	//只有不选择Web Server的feature,才显示结束界面.如果选择了Web Server，那么显示Web Server的结束界面
+	if (svFeatureWS = "0") then 
+    if ( BATCH_INSTALL ) then
+    	SdFinishReboot ( szTitle , szMsg1 , SYS_BOOTMACHINE , szMsg2 , 0 );
+    else    
+       	SdFinish ( szTitle , szMsg1 , szMsg2 , szOpt1 , szOpt2 , bOpt1 , bOpt2 );
+    endif;
+    endif;
+end;
+*/
+
+//---------------------------------------------------------------------------
+// OnEnd
+//
+// The OnEnd event is called at the end of the setup. This event is not
+// called if the setup is aborted.
+//---------------------------------------------------------------------------
+function OnEnd()
+    STRING szTitle, szMsg1, szMsg2, szOpt1, szOpt2;
+    NUMBER bOpt1, bOpt2;
+begin
+	if (hMutex) then
+		CloseHandle(hMutex);
+	endif;
+	DeleteFolder( svMongodbinitInstalldir);
+	if (!REMOVEONLY) then
+	if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+    	RegDBSetKeyValueEx(REGROOT,REGKEY_RM,nvType,svFeatureRM,nvSize);
+        RegDBSetKeyValueEx(REGROOT,REGKEY_RABBITMQ,nvType,svFeatureRabbitMQ,nvSize);
+        RegDBSetKeyValueEx(REGROOT,REGKEY_REDIS,nvType,svFeatureRedis,nvSize);        
+        RegDBSetKeyValueEx(REGROOT,REGKEY_WS,nvType,svFeatureWS,nvSize);
+        RegDBSetKeyValueEx(REGROOT,REGKEY_INITDATA,nvType,svinitdata,nvSize);
+        RegDBSetKeyValueEx(REGROOT,REGKEY_UPGRADEDATA,nvType,svupgradedata,nvSize);
+    endif;
+    REGDB_OPTIONS = REGDB_OPTIONS & ~REGDB_OPTION_WOW64_64KEY;
+    endif;
+    WriteRegistryDump();
+    endif;    
+    
+    if (REMOVEONLY) then
+    DeleteRegistryDump();
+    DeleteFolder(DUMP_PATH);
+    endif;
+end;
+
+//---------------------------------------------------------------------------
+// OnFirstUIAfter
+//
+// The OnFirstUIAfter event called by the framework after the file transfer
+// of the setup when the setup is running in first install mode. By default
+// this event displays UI that informs the end user that the setup has been
+// completed successfully.
+//---------------------------------------------------------------------------
+/*
+function OnFirstUIAfter()
+    STRING szTitle, szMsg1, szMsg2, szOpt1, szOpt2;
+    NUMBER bOpt1, bOpt2;
+begin
+	Disable(STATUSEX);
+
+	bOpt1   = FALSE;
+    bOpt2   = FALSE;    
+
+		
+	//只有不选择Web Server的feature,才显示结束界面.如果选择了Web Server，那么显示Web Server的结束界面
+	if (svFeatureWS = "0") then 
+	szMsg1 = "NetBrain Integrated Edition has been installed successfully. Click Finish to exit the wizard.";
+    szMsg2 = ""; 
+    szOpt1 = "";
+    szOpt2  = "";
+    // Display the SdFinish dialog box.
+    nResult=SdFinish (szTitle, szMsg1, szMsg2, szOpt1, szOpt2, bOpt1, bOpt2);  
+    endif;
+end;
+*/

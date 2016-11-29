@@ -1,0 +1,81 @@
+#include "common.rul"
+//---------------------------------------------------------------------------
+// The Installing event is sent before the feature NS
+// is installed.
+//---------------------------------------------------------------------------
+export prototype NS_Installing();
+function NS_Installing()
+begin
+    SetStatusWindow (0, "Init log folder");
+	RunApplication(SUPPORTDIR^"mknetbrain.bat","\""+SETUPTYPE+"\"", FALSE,TRUE,TRUE );
+	WriteLogFile("Setup DefaultFeature_Installing");
+	SetStatusWindow (2, "Uninstall Old services");  
+	writeinfouninstall();
+	DoUninstallServices(); 
+	SetStatusWindow (3, "Delete old files"); 
+    DeleteFolder(INSTALLDIR^"bin");
+end;
+
+//---------------------------------------------------------------------------
+// The Installed event is sent after the feature NS
+// is installed.
+//---------------------------------------------------------------------------
+export prototype NS_Installed();
+function NS_Installed()
+STRING svStr,svSetupPath,svReturnLine; 
+number nvLineNumber,nvServiceState;
+begin
+	//config ini
+	WriteLogFile("Setup NS_Installed");
+   		Disable(LOGGING);
+		WriteLogFile("SETUP change port ini files");
+		WriteProfString ( INSTALLDIR^"conf"^"proxysetting.ini", "server", "port", svLiveProxyport ); 
+		//fix ENG-15479 edit by liuyang 2016.10.13 begin
+		//if (svencryption = "TRUE") then
+		WriteProfString ( INSTALLDIR^"conf"^"fix_proxysetting.ini", "key", "Key", svkeyvalue); 
+		//endif;
+		//fix ENG-15479 edit by liuyang 2016.10.13 end
+    	Enable(LOGGING);
+   	//config ini
+   	
+    //INSTALL AUS 
+    //Maybe other service
+   	//INSTALL AUS 
+   	//install and start service
+    SetStatusWindow (95, "Install Services for NetBrain Proxy Server");
+   	DoInstallServices();
+   	SetStatusWindow (99, "Start Services for NetBrain Proxy Server");
+   	//install and start service  
+	WriteInfo();
+    WriteRegistryWeb();
+    WriteRegistryDump();
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalling event is sent just before the feature 
+// NS is uninstalled.
+//---------------------------------------------------------------------------
+export prototype NS_UnInstalling();
+function NS_UnInstalling()
+begin
+	WriteLogFile("Setup NS_UnInstalling"); 
+	DoUninstallServices();
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalled event is sent after the feature NS
+// is uninstalled.
+//---------------------------------------------------------------------------
+export prototype NS_UnInstalled();
+function NS_UnInstalled()
+begin
+	WriteLogFile("Setup NS_UnInstalled");   
+	writeinfouninstall();
+	DeleteRegistryWeb();
+	DeleteRegistryDump();
+	//DeleteDir ( INSTALLDIR , ROOT );
+	DeleteFolder(INSTALLDIR);
+	DeleteFolder(DUMP_PATH);
+	DeleteDir ( DUMP_PATH , ROOT );
+end;
+

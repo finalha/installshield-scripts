@@ -1,0 +1,799 @@
+#define OFN_FILEMUSTEXIST            0x00001000
+#define OFN_PATHMUSTEXIST            0x00000800
+#define OFN_HIDEREADONLY             0x00000004
+#define OFN_NOCHANGEDIR              0x00000008
+#define OFN_EXPLORER                 0x00080000
+
+typedef STR260
+begin
+   STRING sz[260];
+end;
+
+typedef OPENFILENAME
+begin
+	LONG     lStructSize;
+	HWND     hwndOwner;
+	HWND     hInstance;
+	POINTER  lpstrFilter;
+	POINTER  lpstrCustomFilter;
+	LONG     nMaxCustFilter;
+	LONG     nFilterIndex;
+	POINTER  lpstrFile;
+	LONG     nMaxFile;
+	POINTER  lpstrFileTitle;
+	LONG     nMaxFileTitle;
+	POINTER  lpstrInitialDir;
+	POINTER  lpstrTitle;
+	LONG     Flags;
+	SHORT    nFileOffset;
+	SHORT    nFileExtension;
+	POINTER  lpstrDefExt;
+	POINTER  lCustData;
+	POINTER  lpfnHook;
+	POINTER  lpTemplateName;
+end;
+
+typedef StringMap
+begin
+	SHORT    nId;
+	STRING   szValue[64];
+end;
+
+typedef ListMap
+begin
+	SHORT    nId;
+	LIST     lstValues;
+end;
+		
+prototype comdlg32.GetOpenFileNameA( LONG );
+prototype FileBrowseDlg( BYREF STRING, STRING, STRING, STRING);
+prototype SdMongoDB();
+prototype SdRabbitMQ();
+prototype SdRedis();
+prototype SdCertificate();
+prototype SdWebAPIService();
+prototype SdCustomDialog(STRING, ListMap POINTER, BYREF variant, BYREF BOOL, NUMBER, NUMBER, NUMBER);
+prototype object NewStringMap();
+
+function object NewStringMap()
+	StringMap map;
+begin
+	return map;
+end;
+
+// SdMongoDB -------------------------------------------------------------
+function SdMongoDB()
+	string    szDlg, szTemp, szValue;
+	ListMap   lstMongoDbServers;
+	StringMap szMongoDbMap(3);
+	number    nId, nDlg, nTemp, nCount, i;
+begin
+	szDlg = "SdMongoDB";
+
+	// Import data from the silent install configuration.
+	if (MODE = SILENTMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+		SilentReadData(szAppKey, "Result", DATA_NUMBER, szTemp, nId); 
+
+		if ((nId != BACK) && (nId != CANCEL)) then
+			SilentReadData(szAppKey, "MongoDbServersCount", DATA_NUMBER, szTemp, nCount); 
+
+			if (nCount > 0) then
+				ListDeleteAll(mongoDbServers);
+				nTemp = 1;
+				
+				while (nTemp <= nCount) 
+					Sprintf(szTemp, "MongoDbServer%d", nTemp);
+					SilentReadData(szAppKey, szTemp, DATA_STRING, szValue, nDlg); 
+					ListAddString(mongoDbServers, szValue, AFTER);
+					nTemp++;
+				endwhile;
+			endif;		
+
+			SilentReadData(szAppKey, "MongoDbUsername", DATA_STRING, mongoDbUsername, nTemp); 
+			SilentReadData(szAppKey, "MongoDbPassword", DATA_STRING, mongoDbPassword, nTemp); 
+			SilentReadData(szAppKey, "MongoDbReplicaSetName", DATA_STRING, mongoDbReplicaSetName, nTemp); 
+			SilentReadData(szAppKey, "MongoUseSSL", DATA_NUMBER, szTemp, nTemp); 
+
+			if (nTemp == 1) then
+				mongoDbUseSsl = BUTTON_CHECKED;
+			else
+				mongoDbUseSsl = BUTTON_UNCHECKED;
+			endif;
+		endif;
+		return nId;        
+	endif;
+
+	lstMongoDbServers.nId = 1313;
+	lstMongoDbServers.lstValues = mongoDbServers;
+
+	for i = 0 to 2
+		szMongoDbMap(i) = NewStringMap();
+	endfor;
+
+	szMongoDbMap(1).nId = 1318;
+	szMongoDbMap(1).szValue = mongoDbUsername;
+	szMongoDbMap(2).nId = 1320;
+	szMongoDbMap(2).szValue = mongoDbPassword;
+	szMongoDbMap(0).nId = 1322;
+	szMongoDbMap(0).szValue = mongoDbReplicaSetName;
+
+	nId = SdCustomDialog(szDlg, &lstMongoDbServers, szMongoDbMap,
+						 mongoDbUseSsl, 1324, 0, 0);
+
+	mongoDbServers = lstMongoDbServers.lstValues;
+	mongoDbReplicaSetName = szMongoDbMap(0).szValue;
+	mongoDbUsername = szMongoDbMap(1).szValue;
+	mongoDbPassword = szMongoDbMap(2).szValue;
+
+	// Record data produced by this dialog.
+	if (MODE = RECORDMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+		nCount = ListCount(mongoDbServers);
+
+		SilentWriteData(szAppKey, "MongoDbServersCount", DATA_NUMBER, "", nCount); 
+
+		if (nCount > 0) then
+			nCount = 1;
+			nResult = ListGetFirstString(mongoDbServers, szValue);
+			
+			while (nResult != END_OF_LIST)
+				StrTrim(szValue);
+				
+				if (szValue != "") then 
+					Sprintf(szTemp, "MongoDbServer%d", nCount);
+					SilentWriteData(szAppKey, szTemp, DATA_STRING, szValue, 0); 
+				endif; 
+				
+				nResult = ListGetNextString(mongoDbServers, szValue);
+				nCount++;
+			endwhile;
+		endif;
+
+		SilentWriteData(szAppKey, "MongoDbUsername", DATA_STRING, mongoDbUsername, 0); 
+		SilentWriteData(szAppKey, "MongoDbPassword", DATA_STRING, mongoDbPassword, 0); 
+		SilentWriteData(szAppKey, "MongoDbReplicaSetName", DATA_STRING, mongoDbReplicaSetName, 0); 
+
+		if (mongoDbUseSsl == BUTTON_CHECKED) then
+			SilentWriteData(szAppKey, "MongoUseSSL", DATA_NUMBER, "", 1); 
+		else
+			SilentWriteData(szAppKey, "MongoUseSSL", DATA_NUMBER, "", 0); 
+		endif;
+
+		SilentWriteData(szAppKey, "Result", DATA_NUMBER, "", nId); 
+	endif;
+
+	return nId;
+
+end;  
+
+// SdRabbitMQ -------------------------------------------------------------
+function  SdRabbitMQ()
+	string    szDlg, szTemp, szValue;
+	ListMap   lstRabbitMqServers;
+	StringMap szRabbitMqMap(3);
+	number    nId, nDlg, nTemp, nCount, i;
+begin
+
+	szDlg = "SdRabbitMQ";
+
+	// Import data from the silent install configuration.
+	if (MODE = SILENTMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+		SilentReadData(szAppKey, "Result", DATA_NUMBER, szTemp, nId); 
+
+		if ((nId != BACK) && (nId != CANCEL)) then
+			SilentReadData(szAppKey, "RabbitMqServersCount", DATA_NUMBER, szTemp, nCount); 
+
+			if (nCount > 0) then
+				ListDeleteAll(rabbitMqServers);
+				nTemp = 1;
+				
+				while (nTemp <= nCount) 
+					Sprintf(szTemp, "RabbitMqServer%d", nTemp);
+					SilentReadData(szAppKey, szTemp, DATA_STRING, szValue, nDlg); 
+					ListAddString(rabbitMqServers, szValue, AFTER);
+					nTemp++;
+				endwhile;
+			endif;		
+
+			SilentReadData(szAppKey, "RabbitMqUsername", DATA_STRING, rabbitMqUsername, nTemp); 
+			SilentReadData(szAppKey, "RabbitMqPassword", DATA_STRING, rabbitMqPassword, nTemp); 
+			SilentReadData(szAppKey, "RabbitMqPort", DATA_STRING, rabbitMqLocalPort, nTemp); 
+			SilentReadData(szAppKey, "RabbitMqUseSSL", DATA_NUMBER, szTemp, nTemp); 
+
+			if (nTemp == 1) then
+				rabbitMqUseSsl = BUTTON_CHECKED;
+			else
+				rabbitMqUseSsl = BUTTON_UNCHECKED;
+			endif;
+		endif;
+		return nId;        
+	endif;
+
+	lstRabbitMqServers.nId = 1360;
+	lstRabbitMqServers.lstValues = rabbitMqServers;
+
+	for i = 0 to 2
+		szRabbitMqMap(i) = NewStringMap();
+	endfor;
+
+	szRabbitMqMap(0).nId = 1351;
+	szRabbitMqMap(0).szValue = rabbitMqUsername;
+	szRabbitMqMap(1).nId = 1354;
+	szRabbitMqMap(1).szValue = rabbitMqPassword;
+	szRabbitMqMap(2).nId = 1357;
+	szRabbitMqMap(2).szValue = rabbitMqLocalPort;
+
+	nId = SdCustomDialog(szDlg, &lstRabbitMqServers, szRabbitMqMap,
+						 rabbitMqUseSsl, 1359, 0, 0);
+
+	rabbitMqServers = lstRabbitMqServers.lstValues;
+	rabbitMqUsername = szRabbitMqMap(0).szValue;
+	rabbitMqPassword = szRabbitMqMap(1).szValue;
+	rabbitMqLocalPort = szRabbitMqMap(2).szValue;
+
+	// Record data produced by this dialog.
+	if (MODE = RECORDMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+		nCount = ListCount(rabbitMqServers);
+
+		SilentWriteData(szAppKey, "RabbitMqServersCount", DATA_NUMBER, "", nCount); 
+
+		if (nCount > 0) then
+			nCount = 1;
+			nResult = ListGetFirstString(rabbitMqServers, szValue);
+			
+			while (nResult != END_OF_LIST)
+				StrTrim(szValue);
+				
+				if (szValue != "") then 
+					Sprintf(szTemp, "RabbitMqServer%d", nCount);
+					SilentWriteData(szAppKey, szTemp, DATA_STRING, szValue, 0); 
+				endif; 
+				
+				nResult = ListGetNextString(rabbitMqServers, szValue);
+				nCount++;
+			endwhile;
+		endif;
+
+		SilentWriteData(szAppKey, "RabbitMqUsername", DATA_STRING, rabbitMqUsername, 0); 
+		SilentWriteData(szAppKey, "RabbitMqPassword", DATA_STRING, rabbitMqPassword, 0); 
+		SilentWriteData(szAppKey, "RabbitMqPort", DATA_STRING, rabbitMqLocalPort, 0); 
+
+		if (rabbitMqUseSsl == BUTTON_CHECKED) then
+			SilentWriteData(szAppKey, "RabbitMqUseSSL", DATA_NUMBER, "", 1); 
+		else
+			SilentWriteData(szAppKey, "RabbitMqUseSSL", DATA_NUMBER, "", 0); 
+		endif;
+
+		SilentWriteData(szAppKey, "Result", DATA_NUMBER, "", nId); 
+	endif;
+
+	return nId;
+
+end;  
+
+// SdRedis -------------------------------------------------------------
+function SdRedis()
+	string    szDlg, szTemp;
+	StringMap szRedisMap(4);
+	number    nId, nDlg, nTemp, i;
+begin
+
+	szDlg = "SdRedis";
+
+	// Import data from the silent install configuration.
+	if (MODE = SILENTMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+		SilentReadData(szAppKey, "Result", DATA_NUMBER, szTemp, nId); 
+
+		if ((nId != BACK) && (nId != CANCEL)) then
+			SilentReadData(szAppKey, "RedisServer", DATA_STRING, redisServer, nTemp); 
+			SilentReadData(szAppKey, "RedisPassword", DATA_STRING, redisPassword, nTemp); 
+			SilentReadData(szAppKey, "RedisUseSSL", DATA_NUMBER, szTemp, nTemp); 
+
+			if (nTemp == 1) then
+				redisUseSsl = BUTTON_CHECKED;
+				SilentReadData(szAppKey, "StunnelPort", DATA_STRING, stunnelPort, nTemp); 
+				if (StrCompare ("", redisLocalPort) = 0) then 
+					redisLocalPort = "7000";
+				endif;
+			else
+				redisUseSsl = BUTTON_UNCHECKED;
+				SilentReadData(szAppKey, "RedisPort", DATA_STRING, redisPort, nTemp); 
+				if (StrCompare ("", redisLocalPort) = 0) then 
+					redisLocalPort = "6379";
+				endif;
+			endif;
+		endif;
+		return nId;
+	endif;
+
+	for i = 0 to 3
+		szRedisMap(i) = NewStringMap();
+	endfor;
+
+	szRedisMap(0).nId = 1373;
+	szRedisMap(0).szValue = redisServer;
+	szRedisMap(1).nId = 1379;
+	szRedisMap(1).szValue = redisPort;
+	szRedisMap(2).nId = 1382;
+	szRedisMap(2).szValue = redisPassword;
+	szRedisMap(3).nId = 1388;
+	szRedisMap(3).szValue = stunnelPort;
+
+	nId = SdCustomDialog(szDlg, NULL, szRedisMap,
+						 redisUseSsl, 1387, 1388, 1379);
+
+	redisServer = szRedisMap(0).szValue;
+	redisPort = szRedisMap(1).szValue;
+	redisPassword = szRedisMap(2).szValue;
+	stunnelPort = szRedisMap(3).szValue;
+
+	// Record data produced by this dialog.
+	if (MODE = RECORDMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+
+		SilentWriteData(szAppKey, "RedisServer", DATA_STRING, redisServer, 0); 
+		SilentWriteData(szAppKey, "RedisPassword", DATA_STRING, redisPassword, 0); 
+
+		if (redisUseSsl == BUTTON_CHECKED) then
+			SilentWriteData(szAppKey, "RedisUseSSL", DATA_NUMBER, "", 1); 
+			SilentWriteData(szAppKey, "StunnelPort", DATA_STRING, stunnelPort, 0); 
+		else
+			SilentWriteData(szAppKey, "RedisUseSSL", DATA_NUMBER, "", 0); 
+			SilentWriteData(szAppKey, "RedisPort", DATA_STRING, redisPort, 0); 
+		endif;
+
+		SilentWriteData(szAppKey, "Result", DATA_NUMBER, "", nId); 
+	endif;
+
+	return nId;
+
+end;  
+
+// SdCertificate -------------------------------------------------------------
+function SdCertificate()
+    string szDlg, szTemp;
+    number nId, nDlg, nTemp;
+    HWND   hwndDlg, hwndButton;
+    BOOL   bDone;
+begin
+
+    szDlg = "SdCertificate";
+    
+	// Import data from the silent install configuration.
+	if (MODE = SILENTMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+		SilentReadData(szAppKey, "Result", DATA_NUMBER, szTemp, nId); 
+
+		if ((nId != BACK) && (nId != CANCEL)) then
+			SilentReadData(szAppKey, "CAPath", DATA_STRING, caPath, nTemp); 
+			SilentReadData(szAppKey, "IgnoreCA", DATA_NUMBER, szTemp, nTemp); 
+
+			if (nTemp == 1) then
+				ignoreCa = BUTTON_CHECKED;
+			else
+				ignoreCa = BUTTON_UNCHECKED;
+			endif;
+		endif;
+		return nId;        
+	endif;
+
+    // ensure general initialization is complete
+    if (!bSdInit) then
+        SdInit();
+    endif;
+
+    if (EzDefineDialog( szDlg, ISUSER, szDlg, 0) = DLG_ERR) then
+	        return -1;
+    endif;
+
+    // Loop in dialog until the user selects a standard button
+    bDone = FALSE;
+
+    while (!bDone)
+
+        nId = WaitOnDialog(szDlg);
+ 
+        switch (nId)
+    
+        case DLG_INIT:
+            hwndDlg = CmdGetHwndDlg( szDlg );
+            SdGeneralInit( szDlg, hwndDlg, STYLE_BOLD, szSdProduct );
+
+			CtrlSetState(szDlg, 1303, ignoreCa);
+			CtrlSetText(szDlg, 1306, caPath);
+			
+        	if (ignoreCa == BUTTON_CHECKED) then
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1306);
+                if(IsWindow(hwndButton)) then
+                    EnableWindow(hwndButton, FALSE);
+                endif;
+				hwndButton = CtrlGetDlgItem(szDlg, 0, 1307);
+				if(IsWindow(hwndButton)) then
+					EnableWindow(hwndButton, FALSE);
+				endif;
+			else
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1306);
+                if(IsWindow(hwndButton)) then
+                    EnableWindow(hwndButton, TRUE);
+                endif;
+				hwndButton = CtrlGetDlgItem(szDlg, 0, 1307);
+				if(IsWindow(hwndButton)) then
+					EnableWindow( hwndButton, TRUE);
+				endif;
+			endif;
+			
+        case 1303:
+        	ignoreCa = CtrlGetState(szDlg, 1303);
+
+        	if (ignoreCa == BUTTON_CHECKED) then
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1306);
+                if(IsWindow(hwndButton)) then
+                    EnableWindow(hwndButton, FALSE);
+                endif;
+				hwndButton = CtrlGetDlgItem(szDlg, 0, 1307);
+				if(IsWindow(hwndButton)) then
+					EnableWindow( hwndButton, FALSE);
+				endif;
+			else
+                hwndButton = CtrlGetDlgItem(szDlg, 0, 1306);
+                if(IsWindow(hwndButton)) then
+                    EnableWindow(hwndButton, TRUE);
+                endif;
+				hwndButton = CtrlGetDlgItem(szDlg, 0, 1307);
+				if(IsWindow(hwndButton)) then
+					EnableWindow( hwndButton, TRUE);
+				endif;
+			endif;
+
+        case 1307:
+			FileBrowseDlg(caPath, "All files (*.*)", "Select File", SRCDISK);
+			CtrlSetText(szDlg, 1306, caPath);
+            
+        case SD_PBUT_OK:
+            nId   = OK;
+            bDone = TRUE;
+
+        case BACK:
+            nId    = BACK;
+            bDone  = TRUE;
+
+        case DLG_ERR:
+            SdError( -1, szDlg );
+            nId   = -1;
+            bDone = TRUE;
+
+        case DLG_CLOSE:
+            SdCloseDlg(hwndDlg, nId, bDone);
+
+        default:
+            // check standard handling
+            if(SdIsStdButton(nId) && SdDoStdButton(nId)) then
+                bDone = TRUE;
+            endif;
+     
+        endswitch;
+
+    endwhile;
+
+	ignoreCa = CtrlGetState(szDlg, 1303);
+	CtrlGetText(szDlg, 1306, caPath);
+
+    EndDialog(szDlg);
+    ReleaseDialog(szDlg);
+    SdUnInit();
+    
+	// Record data produced by this dialog.
+	if (MODE = RECORDMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+
+		SilentWriteData(szAppKey, "CAPath", DATA_STRING, caPath, 0); 
+
+		if (ignoreCa == BUTTON_CHECKED) then
+			SilentWriteData(szAppKey, "IgnoreCA", DATA_NUMBER, "", 1); 
+		else
+			SilentWriteData(szAppKey, "IgnoreCA", DATA_NUMBER, "", 0); 
+		endif;
+
+		SilentWriteData(szAppKey, "Result", DATA_NUMBER, "", nId); 
+	endif;
+
+    return nId;
+
+end;  
+
+// SdWebAPIService -------------------------------------------------------------
+function SdWebAPIService()
+    string szDlg, szTemp;
+    number nId, nDlg, nTemp;
+    HWND   hwndDlg, hwndButton;
+    BOOL   bDone;
+begin
+
+    szDlg = "SdWebAPIService";
+
+	// Import data from the silent install configuration.
+	if (MODE = SILENTMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+		SilentReadData(szAppKey, "Result", DATA_NUMBER, szTemp, nId); 
+
+		if ((nId != BACK) && (nId != CANCEL)) then
+			SilentReadData(szAppKey, "WebAPIServiceUrl", DATA_STRING, webAPIServerUrl, nTemp); 
+		endif;
+		return nId;        
+	endif;
+
+    // ensure general initialization is complete
+    if (!bSdInit) then
+        SdInit();
+    endif;
+
+    if (EzDefineDialog( szDlg, ISUSER, szDlg, 0) = DLG_ERR) then
+	        return -1;
+    endif;
+
+    // Loop in dialog until the user selects a standard button
+    bDone = FALSE;
+
+    while (!bDone)
+
+        nId = WaitOnDialog(szDlg);
+ 
+        switch (nId)
+    
+        case DLG_INIT:
+            hwndDlg = CmdGetHwndDlg( szDlg );
+            SdGeneralInit( szDlg, hwndDlg, STYLE_BOLD, szSdProduct );
+
+			CtrlSetText(szDlg, 1305, webAPIServerUrl);
+
+        case SD_PBUT_OK:
+            nId   = OK;
+            bDone = TRUE;
+
+        case BACK:
+            nId    = BACK;
+            bDone  = TRUE;
+
+        case DLG_ERR:
+            SdError( -1, szDlg );
+            nId   = -1;
+            bDone = TRUE;
+
+        case DLG_CLOSE:
+            SdCloseDlg(hwndDlg, nId, bDone);
+
+        default:
+            // check standard handling
+            if(SdIsStdButton(nId) && SdDoStdButton(nId)) then
+                bDone = TRUE;
+            endif;
+     
+        endswitch;
+
+    endwhile;
+
+	CtrlGetText(szDlg, 1305, webAPIServerUrl);
+
+    EndDialog(szDlg);
+    ReleaseDialog(szDlg);
+    SdUnInit();
+
+	// Record data produced by this dialog.
+	if (MODE = RECORDMODE) then
+		SdMakeName(szAppKey, szDlg, "", nDlg);
+		SilentWriteData(szAppKey, "WebAPIServiceUrl", DATA_STRING, webAPIServerUrl, 0); 
+		SilentWriteData(szAppKey, "Result", DATA_NUMBER, "", nId); 
+	endif;
+
+    return nId;
+
+end;  
+
+// Custom Dialog -------------------------------------------------------------
+function SdCustomDialog(szDlg, lstMap, arrStringMap, bUseSsl, nUseSsl, nEnable, nDisable)
+    number    nId, nResult, i, nSize;
+    HWND      hwndDlg, hwndButton;
+    BOOL      bDone;
+    STRING    szValue;
+    StringMap sMap;
+    LIST      lstValues;
+begin
+    // ensure general initialization is complete
+    if (!bSdInit) then
+        SdInit();
+    endif;
+
+    if (EzDefineDialog(szDlg, ISUSER, szDlg, 0) = DLG_ERR) then
+        return -1;
+    endif;
+
+    // Loop in dialog until the user selects a standard button
+    bDone = FALSE;
+	lstValues = ListCreate(STRINGLIST);
+	
+    while (!bDone)
+
+        nId = WaitOnDialog(szDlg);
+ 
+        switch (nId)
+    
+        case DLG_INIT:
+            hwndDlg = CmdGetHwndDlg(szDlg);
+            SdGeneralInit(szDlg, hwndDlg, STYLE_BOLD, szSdProduct);
+            
+            if (lstMap != NULL) then
+				CtrlSetMLEText(szDlg, lstMap->nId, lstMap->lstValues);
+			endif;
+
+			nSize = SizeOf(arrStringMap);
+
+			for i = 0 to (nSize - 1)
+                CtrlSetText(szDlg, arrStringMap(i).nId, arrStringMap(i).szValue);
+            endfor;
+            
+			CtrlSetState(szDlg, nUseSsl, bUseSsl);
+
+        	if (bUseSsl == BUTTON_CHECKED) then
+				if (nEnable != 0) then
+					hwndButton = CtrlGetDlgItem(szDlg, 0, nEnable);
+					if(IsWindow(hwndButton)) then
+						EnableWindow(hwndButton, TRUE);
+					endif;
+				endif;
+				if (nDisable != 0) then
+					hwndButton = CtrlGetDlgItem(szDlg, 0, nDisable);
+					if(IsWindow(hwndButton)) then
+						EnableWindow( hwndButton, FALSE);
+					endif;
+				endif;
+			else
+				if (nEnable != 0) then
+					hwndButton = CtrlGetDlgItem(szDlg, 0, nEnable);
+					if(IsWindow(hwndButton)) then
+						EnableWindow(hwndButton, FALSE);
+					endif;
+				endif;
+				if (nDisable != 0) then
+					hwndButton = CtrlGetDlgItem(szDlg, 0, nDisable);
+					if(IsWindow(hwndButton)) then
+						EnableWindow( hwndButton, TRUE);
+					endif;
+				endif;
+			endif;
+
+        case SD_PBUT_OK:
+            nId   = OK;
+            bDone = TRUE;
+
+        case BACK:
+            nId    = BACK;
+            bDone  = TRUE;
+
+        case DLG_ERR:
+            SdError( -1, szDlg );
+            nId   = -1;
+            bDone = TRUE;
+
+        case DLG_CLOSE:
+            SdCloseDlg( hwndDlg, nId, bDone );
+
+        default:
+			if (nId = nUseSsl) then
+				bUseSsl = CtrlGetState(szDlg, nUseSsl);
+
+				if (bUseSsl == BUTTON_CHECKED) then
+					if (nEnable != 0) then
+						hwndButton = CtrlGetDlgItem(szDlg, 0, nEnable);
+						if(IsWindow(hwndButton)) then
+							EnableWindow(hwndButton, TRUE);
+						endif;
+					endif;
+					if (nDisable != 0) then
+						hwndButton = CtrlGetDlgItem(szDlg, 0, nDisable);
+						if(IsWindow(hwndButton)) then
+							EnableWindow( hwndButton, FALSE);
+						endif;
+					endif;
+				else
+					if (nEnable != 0) then
+						hwndButton = CtrlGetDlgItem(szDlg, 0, nEnable);
+						if(IsWindow(hwndButton)) then
+							EnableWindow(hwndButton, FALSE);
+						endif;
+					endif;
+					if (nDisable != 0) then
+						hwndButton = CtrlGetDlgItem(szDlg, 0, nDisable);
+						if(IsWindow(hwndButton)) then
+							EnableWindow( hwndButton, TRUE);
+						endif;
+					endif;
+				endif;
+			
+			// check standard handling
+			elseif(SdIsStdButton(nId) && SdDoStdButton(nId)) then
+				bDone = TRUE;
+            endif;
+     
+        endswitch;
+
+    endwhile;
+
+    if (lstMap != NULL) then
+		CtrlGetMLEText(szDlg, lstMap->nId, lstValues);
+		lstMap->lstValues = lstValues;
+	endif;
+	
+	nSize = SizeOf(arrStringMap);
+
+	for i = 0 to (nSize - 1)
+		CtrlGetText(szDlg, arrStringMap(i).nId, szValue);
+		arrStringMap(i).szValue = szValue;
+	endfor;
+
+	bUseSsl = CtrlGetState(szDlg, nUseSsl);
+
+    EndDialog(szDlg);
+    ReleaseDialog(szDlg);
+    SdUnInit();
+    
+    return nId;
+
+end;  
+
+function FileBrowseDlg( szFile, szFilter, szDialogTitle, szInitialDir)
+	OPENFILENAME ofn;
+	STRING szMsg, szFileTitle[260];
+	STRING szCustomFilter[260], szTemp[260];
+	LONG   nLen, nCount, nResult, n, nFlags, nErr;
+	STR260 str;
+begin
+
+	nLen = StrLength( szFilter );
+	nLen = nLen - 1;
+	nCount = 0;
+	for nCount = 0 to nLen
+		if ( szFilter[nCount] = '|' ) then
+			szFilter[nCount] = '\0';
+		endif;
+	endfor;
+	
+  	UseDLL(WINSYSDIR ^ "comdlg32.dll");
+  	
+  	nFlags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY
+  			 | OFN_NOCHANGEDIR | OFN_EXPLORER;
+
+  	nResult = GetWindowHandle(HWND_INSTALL);
+	str.sz = szFile;
+ 	
+  	ofn.lStructSize = SizeOf(ofn);
+  	ofn.hwndOwner = nResult;
+  	ofn.lpstrFile = &str;
+  	ofn.nMaxFile = SizeOf(str);
+  	ofn.lpstrFilter = &szFilter;
+  	ofn.nFilterIndex = 1;
+  	ofn.lpstrFileTitle = &szFileTitle;
+  	ofn.nMaxFileTitle = 260;
+  	ofn.lpstrTitle = &szDialogTitle;
+  	ofn.Flags = nFlags;
+  	ofn.lpstrDefExt = &szTemp;
+  	ofn.lpstrInitialDir = &szInitialDir;
+  	ofn.hInstance = 0;
+  	ofn.lpstrCustomFilter = &szCustomFilter;
+  	ofn.nMaxCustFilter = 260;
+  	ofn.lpfnHook = 0;
+  	
+  	nResult = GetOpenFileNameA(&ofn);
+  	if nResult = 1 then  	
+		szFile = str.sz;
+  	else
+  		return -1;
+  	endif;
+  	
+  	UnUseDLL(WINSYSDIR ^ "comdlg32.dll");
+  	
+  	return 0;  	
+end;

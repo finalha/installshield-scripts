@@ -1,0 +1,163 @@
+#include "common.rul"
+//---------------------------------------------------------------------------
+// The Installing event is sent before the feature NS
+// is installed.
+//---------------------------------------------------------------------------
+export prototype MongoConfig_Installing();
+function MongoConfig_Installing()
+begin
+  WriteLogFile("Setup MongoConfig_Installing");
+end;
+
+//---------------------------------------------------------------------------
+// The Installed event is sent after the feature NS
+// is installed.
+//---------------------------------------------------------------------------
+export prototype MongoConfig_Installed();
+function MongoConfig_Installed()
+begin
+  WriteLogFile("Setup MongoConfig_Installed");
+  DoConfigMongoDB_shard();
+  DoConfigMongoDB_configsvr();
+  DoInstallMongoDB_shardServices();
+  DoInstallMongoDB_configsvrServices();
+  WriteRegistryMongoConfig();
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalling event is sent just before the feature 
+// NS is uninstalled.
+//---------------------------------------------------------------------------
+export prototype MongoConfig_UnInstalling();
+function MongoConfig_UnInstalling()
+begin
+  WriteLogFile("Setup MongoConfig_UnInstalling");
+  DoUninstallMongoDB_shardServices();
+  DoUninstallMongoDB_configsvrServices();
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalled event is sent after the feature NS
+// is uninstalled.
+//---------------------------------------------------------------------------
+export prototype MongoConfig_UnInstalled();
+function MongoConfig_UnInstalled()
+begin
+   WriteLogFile("Setup MongoConfig_UnInstalled");
+  if( nvCheckDeleteAllData = TRUE ) then 
+  endif;
+end;
+
+export prototype MongoPy_Installing();
+function MongoPy_Installing()
+STRING svMsiexec, svParam, svMsiSourcePackage,svMisDestPackage;
+begin
+    WriteLogFile("Setup MongoPy_Installing");
+    svMsiexec = WINSYSDIR ^ "msiexec.exe";   
+    svMsiSourcePackage = SUPPORTDIR ^ "python-3.4.3.amd64.msi"; 
+    svMisDestPackage = TempFolder^"python-3.4.3.amd64.msi";
+    CopyFileToDes(svMsiSourcePackage,svMisDestPackage);
+    LongPathToQuote ( svMisDestPackage, TRUE ); 
+    svParam = "/i " + svMisDestPackage + " /qn /L*v c:\Python_Install.log"; 
+    nResult=LaunchAppAndWait(svMsiexec, svParam, WAIT|LAAW_OPTION_HIDDEN);
+   //nResult=LaunchAppAndWait(TempFolder^"python-3.4.3.amd64.msi","/qn /L*v c:\Python_Install.log",WAIT|LAAW_OPTION_HIDDEN);
+   //nResult=RunApplication(SUPPORTDIR ^ "python-3.4.3.amd64.msi","/qn", FALSE, TRUE,TRUE);
+    if (nResult!=0) then 
+        WriteLogFile(MSG_ERR_INSTALL_PYTHON );
+    	MessageBox(MSG_ERR_INSTALL_PYTHON,WARNING);
+    	abort;
+    endif;
+    //copy msvcr100 to system folder
+    CopyFileToDes(PYHTON_PATH^"msvcr100.dll","C:\\Windows\\System32\\msvcr100.dll");
+    svMsiSourcePackage = SUPPORTDIR ^ "pymongo-3.0.2.win-amd64-py3.4.exe"; 
+    svMisDestPackage = TempFolder^"pymongo-3.0.2.win-amd64-py3.4.exe";
+    CopyFileToDes(svMsiSourcePackage,svMisDestPackage);
+    LongPathToQuote ( svMisDestPackage, TRUE ); 
+    nResult=LaunchAppAndWait(svMisDestPackage,"",WAIT|LAAW_OPTION_HIDDEN);
+    //svParam = "/i " + svMsiPackage + " /qn /L*v c:\Pymongo_Install.log";
+    //CopyFileToDes(svMsiPackage,TempFolder^"pymongo-3.0.2.win-amd64-py3.4.exe");
+    //nResult=LaunchAppAndWait(svMsiexec,svParam,WAIT|LAAW_OPTION_HIDDEN);
+    //nResult=RunApplication(SUPPORTDIR ^ "pymongo-3.0.2.win-amd64-py3.4.exe","", FALSE, TRUE,TRUE);
+    if (nResult!=0) then 
+        WriteLogFile( MSG_ERR_INSTALL_PYMONGO );
+    	MessageBox(MSG_ERR_INSTALL_PYMONGO,WARNING);
+    	abort;
+    endif;
+end;
+
+//---------------------------------------------------------------------------
+// The Installed event is sent after the feature NS
+// is installed.
+//---------------------------------------------------------------------------
+export prototype MongoPy_Installed();
+function MongoPy_Installed()
+STRING pathvalue;
+NUMBER nvSize,nvType;
+begin
+    nvType=REGDB_STRING_EXPAND;
+    WriteLogFile("Setup MongoPy_Installed");
+//add "C:\\Python34" to environment variable "PATH"
+    RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE);
+    RegDBGetKeyValueEx ("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" , "PATH" , nvType , pathvalue, nvSize); 
+    pathvalue=pathvalue+";C:\\Python34;C:\\Python34\\python.exe";
+    RegDBSetKeyValueEx ("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" , "PATH" , nvType , pathvalue, -1); 
+    //*********在配置完rs(添加primary,secondry,arbiter)和configsvr之后
+    /******
+    nResult = RunApplication(SUPPORTDIR ^ "MongoPy_init.bat","\"" + svMongoPyInstalldir+"\""+" \"" + svMongosIP+"\""+" \"" + svMongosport+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to init MongoPy"); 
+   	else       		
+    	WriteLogFile("Success to init MongoPy");
+    endif;
+    *******/
+    WriteRegistryMongoPy();
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalling event is sent just before the feature 
+// NS is uninstalled.
+//---------------------------------------------------------------------------
+export prototype MongoPy_UnInstalling();
+function MongoPy_UnInstalling()
+begin
+
+end;
+
+//---------------------------------------------------------------------------
+// The UnInstalled event is sent after the feature NS
+// is uninstalled.
+//---------------------------------------------------------------------------
+export prototype MongoPy_UnInstalled();
+function MongoPy_UnInstalled()
+begin
+   WriteLogFile("Setup MongoPy_UnInstalled");
+  if( nvCheckDeleteAllData = TRUE ) then 
+  endif;  
+end;
+
+export prototype Mongos_Installing();
+function Mongos_Installing()
+begin
+ WriteLogFile("Setup Mongos_Installing");
+end;
+export prototype Mongos_Installed();
+function Mongos_Installed()
+begin
+  WriteLogFile("Setup Mongos_Installed");
+  DoConfigMongoDB_mongos();
+  DoInstallMongoDB_mongosServices();
+  WriteRegistryMongos();
+end;
+export prototype Mongos_UnInstalling();
+function Mongos_UnInstalling()
+begin
+  WriteLogFile("Setup Mongos_UnInstalling");
+  DoUninstallMongoDB_mongosServices();
+end;
+export prototype Mongos_UnInstalled();
+function Mongos_UnInstalled()
+begin
+  WriteLogFile("Setup Mongos_UnInstalled");
+  if( nvCheckDeleteAllData = TRUE ) then 
+  endif;
+end;

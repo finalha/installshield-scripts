@@ -1,0 +1,502 @@
+typedef SYSTIME
+begin
+    SHORT nYear;
+    SHORT nMonth;
+    SHORT nDayOfWeek;
+    SHORT nDay;
+    SHORT nHour;
+    SHORT nMinute;
+    SHORT nSecond;
+    SHORT nMillisecond;
+end;
+
+prototype STRING RecordTimeLog();
+prototype WriteLogFile( STRING );
+prototype DeleteLogFile(); 
+prototype RunApplication( STRING , STRING, BOOL, BOOL, BOOL); 
+prototype STRING ReadString(STRING,STRING,BOOL);
+prototype StrIsNums( STRING );
+prototype STRING GetOSEnvVar(STRING);
+prototype DeleteFolder(STRING);
+prototype getParentPath(STRING,BYREF STRING);
+prototype CheckPathSpecChar(STRING);
+prototype WriteRegistryWeb(); 
+prototype DeleteRegistryWeb();
+prototype WriteRegistryDump();
+prototype DeleteRegistryDump();
+prototype DoUninstallServices();
+prototype DoInstallServices(); 
+prototype WriteInfo(); 
+prototype writeinfouninstall();
+prototype ProcessConfSettingback();
+prototype ProcessConfSetting();
+prototype cdecl BOOL WriteVersion.AU_WriteInfo(BYVAL STRING,BYVAL STRING,BYVAL STRING);
+prototype cdecl BOOL WriteVersion.AU_GenerateGuid(BYVAL STRING);
+prototype CheckPreviousVersion();
+prototype WriteNormalFile(STRING,STRING,STRING);
+prototype HWND kernel32.GetSystemTime(SYSTIME POINTER);
+
+function WriteLogFile( svContent )   
+ 	NUMBER   FileHandle;   
+	NUMBER   nResult;
+	STRING	 svResult;
+begin           
+	nResult = FindFile ( LOGFILE_PATH,  LOGFILE_NAME, svResult ); 
+	
+	OpenFileMode (FILE_MODE_APPEND);  
+	if( nResult < 0 ) then
+		nResult = CreateFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	else
+		nResult = OpenFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	endif;
+	
+	if( nResult < 0 ) then  
+		return -1;
+	endif; 
+ 
+	nResult = WriteLine(FileHandle,"");
+	nResult = WriteLine(FileHandle,RecordTimeLog());
+ 
+    nResult = WriteLine(FileHandle,svContent);     
+    CloseFile(FileHandle);    
+    return 0;
+end; 
+
+function writeinfouninstall()
+begin
+	 WriteLogFile("Write uninfo for allusersprofile");
+	 UseDLL ( DLLNAME ); 
+	 AU_WriteInfo(SETUPTYPE,"status","0");     
+	 UnUseDLL ( DLLNAME );
+end;
+
+function WriteInfo()
+STRING svStr,svDateTime,svDate,svTime,svYear,svMonth,svDay;
+NUMBER nvDate,nvTime,nId; 
+LIST   listID;
+STRING svLogPath,svALLUSERSPROFILE;
+begin
+     WriteLogFile("Write info for allusersprofile");
+     //RunApplication(SUPPORTDIR^"mknetbrain.bat","\""+SETUPTYPE+"\"", FALSE,TRUE,FALSE );
+     
+	 GetSystemInfo(DATE,nvDate,svDate);
+	 
+	 listID = ListCreate (STRINGLIST);
+	 StrGetTokens (listID, svDate, "-");  
+	 ListGetFirstString (listID, svMonth); 
+	 ListGetNextString (listID, svDay);
+	 ListGetNextString (listID, svYear); 
+	 ListDestroy (listID); 
+	 StrToNum ( nId, svMonth );
+	 if (nId <10) then  
+	 svMonth= "0"+svMonth;
+	 endif;
+	 StrToNum ( nId, svDay );
+	 if (nId <10) then  
+	 svDay= "0"+svDay;
+	 endif;
+	 svDate=svYear+"/"+svMonth+"/"+svDay;
+	  
+	 GetSystemInfo(TIME,nvTime,svTime);
+	 
+	 svDateTime=svDate+" "+svTime; 
+	 
+	 svALLUSERSPROFILE=GetOSEnvVar("ALLUSERSPROFILE"); 
+	 
+	 StrTrim ( svALLUSERSPROFILE );
+	 
+	 svLogPath=svALLUSERSPROFILE^"NetBrain"^"UpdateLog"^SETUPTYPE;
+	 	 
+	 UseDLL ( DLLNAME ); 
+	 AU_GenerateGuid(SETUPTYPE);
+	 AU_WriteInfo(SETUPTYPE,"Type",SETUPTYPE);
+	 AU_WriteInfo(SETUPTYPE,"Version",IFX_PRODUCT_VERSION);
+	 AU_WriteInfo(SETUPTYPE,"ViewVersion",VIEWVERSION); 
+	 AU_WriteInfo(SETUPTYPE,"Patch","");
+	 AU_WriteInfo(SETUPTYPE,"LastUpgradeTime",svDateTime);
+	 AU_WriteInfo(SETUPTYPE,"status","1");
+	 AU_WriteInfo(SETUPTYPE,"LastPatchTime","");
+	 AU_WriteInfo(SETUPTYPE,"InstallFolder",INSTALLDIR);
+	 AU_WriteInfo(SETUPTYPE,"UpgradeLogPath",svLogPath);       
+	 UnUseDLL ( DLLNAME );
+	 
+end;  
+
+function STRING RecordTimeLog()
+     number  nvReturn1;
+     string  svResult1,szDateTimetmp, szUtc;
+     SYSTIME now;
+ begin       
+     GetSystemInfo( DATE, nvReturn1, svResult1 );  
+     szDateTimetmp = svResult1;
+     szDateTimetmp = szDateTimetmp + " ";
+     GetSystemInfo( TIME, nvReturn1, svResult1 );
+     szDateTimetmp = szDateTimetmp + svResult1;     
+     GetSystemTime(&now);
+    Sprintf(szUtc, "(UTC: %d-%d-%d %d:%0.2d:%0.2d:%0.3d)", 
+            now.nMonth, now.nDay, now.nYear, 
+            now.nHour, now.nMinute, now.nSecond, now.nMillisecond);
+    szDateTimetmp = szDateTimetmp + " " + szUtc; 
+     return szDateTimetmp;
+ end;
+
+function RunApplication( cmd , param, bShow, bWait,bShell )
+    number nShowWindow;
+    number nOptions;
+begin
+	LongPathToQuote( cmd, TRUE );
+	//LongPathToQuote( param, TRUE );
+	if( bShell = TRUE ) then 
+		param=param+" >> "+LOGFILE+" 2>>^&1";                 
+	endif;
+	nShowWindow = SW_NORMAL;
+	nOptions = LAAW_OPTION_CHANGEDIRECTORY | LAAW_OPTION_FIXUP_PROGRAM;
+	if( bShow = FALSE ) then 
+		nShowWindow = SW_HIDE; 
+		nOptions |= LAAW_OPTION_HIDDEN;
+	endif;     	
+	if( bWait = TRUE ) then 
+		nOptions |= LAAW_OPTION_WAIT; 
+	else                           
+		nOptions |= LAAW_OPTION_NOWAIT; 
+	endif;
+	
+	LaunchApplication( cmd, param, "", nShowWindow, INFINITE, nOptions  ); 
+	 WriteLogFile( LAAW_PARAMETERS.szCommandLineResult);
+	 WriteLogFile( LAAW_PARAMETERS.szStatusText );
+	
+	return LAAW_PARAMETERS.nLaunchResult;
+
+     
+	     
+end;  
+
+
+
+function DeleteLogFile() 
+	NUMBER nvRet;
+begin
+
+    nvRet = DeleteFile ( LOGFILE_PATH + LOGFILE_NAME );
+    if( nvRet = 0 || nvRet = ISERR_FILE_NOT_FOUND  ) then 
+    	return 0;
+    else 
+    	return -1;
+    endif;
+end;    
+
+
+function STRING GetOSEnvVar(svOSvar) 
+NUMBER nFileHandle;   
+STRING svLine;
+begin   
+    
+    LaunchAppAndWait( SystemFolder^"cmd.exe" , "/c echo %"+svOSvar+"% >"+SUPPORTDIR^"OSVAR",WAIT|LAAW_OPTION_HIDDEN);
+    
+    OpenFileMode (FILE_MODE_NORMAL); 
+     
+    OpenFile (nFileHandle, SUPPORTDIR, "OSVAR"); 
+    GetLine (nFileHandle, svLine);
+    CloseFile (nFileHandle); 
+
+    return svLine;
+   
+       
+end;
+
+
+function DeleteFolder(szFolderPath)   
+NUMBER nResult;   
+STRING szFileName;    
+LIST listID;
+begin  
+	if (ExistsDir (szFolderPath)=EXISTS) then 
+	WriteLogFile("There exits dir:"+szFolderPath); 
+	    nResult=FindAllFiles(szFolderPath,"*.*",szFileName,RESET);
+        while(nResult = 0)
+	        SetFileInfo (szFileName ,FILE_ATTRIBUTE , FILE_ATTR_NORMAL ,"" );
+	        nResult=FindAllFiles(szFolderPath,"*.*",szFileName,CONTINUE); 
+        endwhile;               
+        
+        DeleteAgain:
+        if DeleteDir(szFolderPath, ROOT)<0 then 
+        	nResult=SdFilesInUse("","Unable to delete the folder below. Maybe some files inside the folder are in use. Please check!",szFolderPath,listID);    
+        	if (nResult = IDRETRY) then
+       			goto DeleteAgain;   
+       		endif;
+        endif;
+        WriteLogFile("End delete folder"+szFolderPath); 
+    endif;		
+end; 
+
+function STRING ReadString(sStringDir ,sStringFile,bonlyline) 
+	STRING  svLine;
+	STRING  svResult;   
+    NUMBER   nFileHandle;  
+    NUMBER   nResult;    
+    NUMBER   nvResult;  
+begin           
+	nResult = FindFile ( sStringDir,  sStringFile, svResult ); 
+	if(0>nResult) then
+		return "";
+	endif;
+	if (bonlyline==TRUE) then 
+		OpenFileMode (FILE_MODE_NORMAL);    
+	else
+		OpenFileMode (FILE_MODE_BINARYREADONLY);
+	endif;
+	if(0>OpenFile(nFileHandle,sStringDir,sStringFile)) then
+		return "";                                                   		
+	endif;     
+	if (bonlyline==TRUE) then  
+	    if (GetLine (nFileHandle, svLine) != 0)  then 
+            svLine= "";    
+        endif;
+    else  
+    	GetFileInfo ( sStringDir + sStringFile, FILE_SIZE, nvResult, svResult ); 
+    	if (ReadBytes (nFileHandle, svLine, 0, nvResult) < 0) then 
+        	svLine= "";
+    	endif;
+	endif;    
+    CloseFile (nFileHandle);    
+    return svLine;
+end; 
+
+
+
+function StrIsNums( svStr )
+	NUMBER iLength, iVal; 
+begin
+	iVal = 0;
+	iLength = StrLength (svStr); 
+	while (iVal < iLength) 
+		if(  svStr[iVal] < '0' ||  svStr[iVal] > '9' ) then
+			return -1;                                                  
+		endif;
+		iVal++; 
+	endwhile;   
+	return 0;
+end; 
+
+function getParentPath(szPath,svParentPath) 
+LIST listID; 
+STRING svStr;
+NUMBER nResult;
+begin 
+   
+    StrRemoveLastSlash ( szPath );
+ 	listID = ListCreate (STRINGLIST); 
+ 	StrGetTokens ( listID , szPath , "\\" );  
+ 	ListSetIndex (listID, LISTLAST);   
+ 	ListDeleteString ( listID ); 
+ 	 	
+ 	ListGetFirstString(listID,svStr); 
+    svParentPath="";
+    while (nResult != END_OF_LIST) 
+    	svParentPath=svParentPath^svStr;
+    	nResult = ListGetNextString (listID, svStr);
+    endwhile;
+     	
+end; 
+
+function CheckPathSpecChar(spathtocheck)
+begin  
+	//return (1);
+	//#$%^&@~`!;',
+	if(StrFind (spathtocheck, "#")>-1 ||StrFind (spathtocheck, "$")>-1 ||StrFind (spathtocheck, "%")>-1 ||StrFind (spathtocheck, "^")>-1 ||StrFind (spathtocheck, "&")>-1 ||StrFind (spathtocheck, "@")>-1||StrFind (spathtocheck, "~")>-1||StrFind (spathtocheck, "`")>-1||StrFind (spathtocheck, "!")>-1||StrFind (spathtocheck, ";")>-1||StrFind (spathtocheck, "'")>-1||StrFind (spathtocheck, ",")>-1)  then
+		MessageBox("The Path can not include any of the following characters: #$%^&@~`!;', ", SEVERE);
+		return (0);                            
+	endif; 
+	return (1);
+end; 
+
+function WriteRegistryWeb()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\NetBrain Proxy Server","InstallDir",nvType,INSTALLDIR,nvSize);
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\NetBrain Proxy Server","Version",nvType,VIEWVERSION,nvSize);
+    endif;
+    endif;   
+end;  
+
+function DeleteRegistryWeb()
+
+begin
+ if(SYSINFO.bIsWow64) then 
+     REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+    	RegDBDeleteKey ( "SOFTWARE\\NetBrain\\NetBrain Proxy Server" );
+ 	endif;
+ endif;
+end;
+
+function DoInstallServices()
+number nResult;
+begin   	          
+    WriteLogFile("Begin to InstallServices NetBrain NetWork Service");
+          
+    //nResult = RunApplication(INSTALLDIR ^ "bin\\nbproxyserver.exe","-install NS",FALSE,TRUE,FALSE );
+    nResult = RunApplication(INSTALLDIR ^ "bin\\nbproxyserver.exe","-install",FALSE,TRUE,FALSE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to install nbproxyserverie"); 
+   	else    
+   		RunApplication(SystemFolder ^ "net.exe", "start \"proxyserverie\"",FALSE,TRUE,FALSE );
+    	WriteLogFile("Success to install nbproxyserverie");
+    endif;
+    
+end;   
+
+function DoUninstallServices()
+number nResult,nvResult;
+begin
+    if ( ServiceExistsService ( "proxyserverie" )) then 
+   		ServiceGetServiceState ("proxyserverie" , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The NetBrain proxyserver Service has been stopped.");
+         else
+			ServiceStopService ( "proxyserverie"  ); 
+         endif;
+        nResult = RunApplication("taskkill" , "/F /IM nbproxyserver.exe /T", FALSE,TRUE,FALSE );
+        //nResult = RunApplication("taskkill" , "/F /IM NBProxyServerDaemon.exe /T", FALSE,TRUE,FALSE );
+        if (nResult!=0) then
+    		WriteLogFile("Fail to taskkill nbproxyserver.exe"); 
+    	else 
+    		WriteLogFile("Success to taskkill nbproxyserver.exe");
+    	endif;   
+   		RunApplication( INSTALLDIR ^ "bin\\nbproxyserver.exe","-remove", FALSE,TRUE,FALSE ); 
+   		ServiceRemoveService( "proxyserverie"  );
+   	else
+   	    WriteLogFile("There is no nbproxyserver");
+   	endif;
+end;  
+
+function ProcessConfSettingback()   
+begin   
+	Disable(LOGGING);
+	if Is(FILE_EXISTS,INSTALLDIR^"conf"^"proxysetting_old.ini") then    
+		if Is(FILE_EXISTS,INSTALLDIR^"conf"^"proxysetting.ini") then 
+		DeleteFile ( INSTALLDIR^"conf"^"proxysetting.ini");	 	
+		endif;
+		RenameFile(INSTALLDIR^"conf"^"proxysetting_old.ini",INSTALLDIR^"conf"^"proxysetting.ini");
+	endif;     
+	Enable(LOGGING);
+end;
+
+function ProcessConfSetting()   
+begin   
+	Disable(LOGGING);
+	WriteLogFile("Begin to ProcessConfSetting");
+	if Is(FILE_EXISTS,INSTALLDIR^"conf"^"proxysetting.ini") then    
+		if !Is(FILE_EXISTS,INSTALLDIR^"conf"^"proxysetting_old.ini") then 
+			RenameFile(INSTALLDIR^"conf"^"proxysetting.ini",INSTALLDIR^"conf"^"proxysetting_old.ini"); 	
+		endif;
+	endif;      
+	Enable(LOGGING);
+end; 
+
+function CheckPreviousVersion()
+STRING szMsg,svComments,svDisplayName,strKEY1,strKEY2,svINSTALLDIR; 
+LIST   listSubKeys;
+NUMBER nReturn, nItem,nResult,nIndex,nvType,nvSize;
+begin
+      
+	svINSTALLDIR="";   
+	strKEY1="SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"; 
+	strKEY2="SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\";
+	
+	RegDBSetDefaultRoot(HKEY_LOCAL_MACHINE);
+	listSubKeys  = ListCreate(STRINGLIST); 
+    if ( (listSubKeys  = LIST_NULL)) then 
+        MessageBox ("Unable to create necessary lists.", SEVERE); 
+        abort; 
+    endif; 
+	nReturn = RegDBQueryKey(strKEY1, REGDB_KEYS, listSubKeys ); 
+    if (nReturn < 0) then
+        MessageBox("First call to RegDBQueryKey failed.", SEVERE); 
+    else 	       		 
+	nResult = ListGetFirstString (listSubKeys, szMsg);   
+    while (nResult != END_OF_LIST)
+          szMsg=strKEY2+szMsg;
+          svComments="";
+          svDisplayName="";  
+           RegDBGetKeyValueEx(szMsg,"Comments",nvType,svComments,nvSize);
+           RegDBGetKeyValueEx(szMsg,"DisplayName",nvType,svDisplayName,nvSize); 
+           		if ((StrCompare (svComments, "NetBrain Proxy Server")=0)&&(StrCompare (svDisplayName, "NetBrain Proxy Server")=0)) then
+           		 	nReturn=RegDBGetKeyValueEx(szMsg,"InstallLocation",nvType,svINSTALLDIR,nvSize);
+					if (svINSTALLDIR = "") then  
+					WriteLogFile("5.1c and before");
+						//SetInstallDir();
+					else 
+						WriteLogFile("5.2 and after");
+						INSTALLDIR=svINSTALLDIR;
+					endif;
+					bvUpgradeFlag=TRUE;
+					return TRUE;					
+           		endif;
+        nResult = ListGetNextString  (listSubKeys, szMsg); 
+    endwhile; 		 		
+    endif; 
+    ListDestroy (listSubKeys); 
+	return FALSE;	 	 
+	
+end;
+
+function WriteRegistryDump()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpFolder",nvType,DUMP_PATH,nvSize);
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpCount",REGDB_NUMBER,"10",nvSize);
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpType",REGDB_NUMBER,"2",nvSize); 
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"CustomDumpFlags",REGDB_NUMBER,"0",nvSize);     		
+    endif;
+    endif;   
+end;  
+
+function DeleteRegistryDump()
+
+begin
+ if(SYSINFO.bIsWow64) then 
+     REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+    	RegDBDeleteKey (REG_LOCALDUMPS);
+ 	endif;
+ endif;
+end;
+
+function WriteNormalFile( svfilepath,svfilename,svContent )   
+ 	NUMBER   FileHandle;   
+	NUMBER   nResult;
+	STRING	 svResult;
+begin           
+	nResult = FindFile ( svfilepath,  svfilename, svResult ); 
+	
+	OpenFileMode (FILE_MODE_APPEND);  
+	if( nResult < 0 ) then
+		nResult = CreateFile(FileHandle, svfilepath,  svfilename );  
+	else
+		nResult = OpenFile(FileHandle, svfilepath,  svfilename );  
+	endif;
+	
+	if( nResult < 0 ) then  
+		return -1;
+	endif; 
+ 
+	nResult = WriteLine(FileHandle,"");
+	nResult = WriteLine(FileHandle,RecordTimeLog());
+ 
+    nResult = WriteLine(FileHandle,svContent);     
+    CloseFile(FileHandle);    
+    return 0;
+end; 

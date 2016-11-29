@@ -1,0 +1,669 @@
+
+
+prototype STRING RecordTimeLog();
+prototype WriteLogFile( STRING );
+prototype DeleteLogFile(); 
+prototype RunApplication( STRING , STRING, BOOL, BOOL, BOOL); 
+prototype STRING ReadString(STRING,STRING,BOOL);
+prototype StrIsNums( STRING );
+prototype STRING GetOSEnvVar(STRING);
+prototype DeleteFolder(STRING);
+prototype getParentPath(STRING,BYREF STRING);
+prototype CheckPathSpecChar(STRING);
+prototype WriteRegistryMongoConfig(); 
+prototype DoUninstallServices();
+prototype DoInstallServices(); 
+prototype WriteInfo(); 
+prototype writeinfouninstall();
+prototype ProcessConfSettingback();
+prototype cdecl BOOL WriteVersion.AU_WriteInfo(BYVAL STRING,BYVAL STRING,BYVAL STRING);
+prototype cdecl BOOL WriteVersion.AU_GenerateGuid(BYVAL STRING);
+prototype DoInstallMongoDB_shardServices(); 
+prototype DoUninstallMongoDB_shardServices();
+prototype DoInstallMongoDB_configsvrServices(); 
+prototype DoUninstallMongoDB_configsvrServices();
+prototype DoInstallMongoDB_mongosServices(); 
+prototype DoUninstallMongoDB_mongosServices();
+prototype DoConfigMongoDB_shard();
+prototype DoConfigMongoDB_configsvr();
+prototype DoConfigMongoDB_mongos();
+prototype WriteRegistryMongos(); 
+prototype WriteRegistryMongoPy();
+prototype FormatVer(STRING,BYREF STRING); 
+prototype CopyFileToDes(STRING,STRING); 
+prototype NUMBER checkIPAddress(STRING);
+
+
+function WriteLogFile( svContent )   
+ 	NUMBER   FileHandle;   
+	NUMBER   nResult;
+	STRING	 svResult;
+begin           
+	nResult = FindFile ( LOGFILE_PATH,  LOGFILE_NAME, svResult ); 
+	
+	OpenFileMode (FILE_MODE_APPEND);  
+	if( nResult < 0 ) then
+		nResult = CreateFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	else
+		nResult = OpenFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	endif;
+	
+	if( nResult < 0 ) then  
+		return -1;
+	endif; 
+ 
+	nResult = WriteLine(FileHandle,"");
+	nResult = WriteLine(FileHandle,RecordTimeLog());
+ 
+    nResult = WriteLine(FileHandle,svContent);     
+    CloseFile(FileHandle);    
+    return 0;
+end; 
+
+function writeinfouninstall()
+begin
+	 WriteLogFile("Write uninfo for allusersprofile");
+	 UseDLL ( DLLNAME ); 
+	 AU_WriteInfo(SETUPTYPE,"status","0");     
+	 UnUseDLL ( DLLNAME );
+end;
+
+function WriteInfo()
+STRING svStr,svDateTime,svDate,svTime,svYear,svMonth,svDay;
+NUMBER nvDate,nvTime,nId; 
+LIST   listID;
+STRING svLogPath,svALLUSERSPROFILE;
+begin
+     WriteLogFile("Write info for allusersprofile");
+     //RunApplication(SUPPORTDIR^"mknetbrain.bat","\""+SETUPTYPE+"\"", FALSE,TRUE,FALSE );
+     
+	 GetSystemInfo(DATE,nvDate,svDate);
+	 
+	 listID = ListCreate (STRINGLIST);
+	 StrGetTokens (listID, svDate, "-");  
+	 ListGetFirstString (listID, svMonth); 
+	 ListGetNextString (listID, svDay);
+	 ListGetNextString (listID, svYear); 
+	 ListDestroy (listID); 
+	 StrToNum ( nId, svMonth );
+	 if (nId <10) then  
+	 svMonth= "0"+svMonth;
+	 endif;
+	 StrToNum ( nId, svDay );
+	 if (nId <10) then  
+	 svDay= "0"+svDay;
+	 endif;
+	 svDate=svYear+"/"+svMonth+"/"+svDay;
+	  
+	 GetSystemInfo(TIME,nvTime,svTime);
+	 
+	 svDateTime=svDate+" "+svTime; 
+	 
+	 svALLUSERSPROFILE=GetOSEnvVar("ALLUSERSPROFILE"); 
+	 
+	 StrTrim ( svALLUSERSPROFILE );
+	 
+	 svLogPath=svALLUSERSPROFILE^"NetBrain"^"UpdateLog"^SETUPTYPE;
+	 	 
+	 UseDLL ( DLLNAME ); 
+	 AU_GenerateGuid(SETUPTYPE);
+	 AU_WriteInfo(SETUPTYPE,"Type",SETUPTYPE);
+	 AU_WriteInfo(SETUPTYPE,"Version",IFX_PRODUCT_VERSION);
+	 AU_WriteInfo(SETUPTYPE,"ViewVersion",VIEWVERSION); 
+	 AU_WriteInfo(SETUPTYPE,"Patch","");
+	 AU_WriteInfo(SETUPTYPE,"LastUpgradeTime",svDateTime);
+	 AU_WriteInfo(SETUPTYPE,"status","1");
+	 AU_WriteInfo(SETUPTYPE,"LastPatchTime","");
+	 AU_WriteInfo(SETUPTYPE,"InstallFolder",INSTALLDIR);
+	 AU_WriteInfo(SETUPTYPE,"UpgradeLogPath",svLogPath);       
+	 UnUseDLL ( DLLNAME );
+	 
+end;  
+
+function STRING RecordTimeLog()
+	number  nvReturn1;
+	string  svResult1,szDateTimetmp;
+begin   	
+	   	GetSystemInfo( DATE, nvReturn1, svResult1 );  
+   		szDateTimetmp = svResult1;
+   		szDateTimetmp = szDateTimetmp + " ";
+   		GetSystemInfo( TIME, nvReturn1, svResult1 );
+   		szDateTimetmp = szDateTimetmp + svResult1; 
+   		return szDateTimetmp;
+   		//WriteLogFile(szDateTimetmp);     		
+end;
+
+
+function RunApplication( cmd , param, bShow, bWait,bShell )
+    number nShowWindow;
+    number nOptions;
+begin
+	LongPathToQuote( cmd, TRUE );
+	//LongPathToQuote( param, TRUE );
+	if( bShell = TRUE ) then 
+		param=param+" >> "+LOGFILE+" 2>>^&1";                 
+	endif;
+	nShowWindow = SW_NORMAL;
+	nOptions = LAAW_OPTION_CHANGEDIRECTORY | LAAW_OPTION_FIXUP_PROGRAM;
+	if( bShow = FALSE ) then 
+		nShowWindow = SW_HIDE; 
+		nOptions |= LAAW_OPTION_HIDDEN;
+	endif;     	
+	if( bWait = TRUE ) then 
+		nOptions |= LAAW_OPTION_WAIT; 
+	else                           
+		nOptions |= LAAW_OPTION_NOWAIT; 
+	endif;
+	
+	LaunchApplication( cmd, param, "", nShowWindow, INFINITE, nOptions  ); 
+	 WriteLogFile( LAAW_PARAMETERS.szCommandLineResult);
+	 WriteLogFile( LAAW_PARAMETERS.szStatusText );
+	
+	return LAAW_PARAMETERS.nLaunchResult;
+
+     
+	     
+end;  
+
+
+
+function DeleteLogFile() 
+	NUMBER nvRet;
+begin
+
+    nvRet = DeleteFile ( LOGFILE_PATH + LOGFILE_NAME );
+    if( nvRet = 0 || nvRet = ISERR_FILE_NOT_FOUND  ) then 
+    	return 0;
+    else 
+    	return -1;
+    endif;
+end;    
+
+
+function STRING GetOSEnvVar(svOSvar) 
+NUMBER nFileHandle;   
+STRING svLine;
+begin   
+    
+    LaunchAppAndWait( SystemFolder^"cmd.exe" , "/c echo %"+svOSvar+"% >"+SUPPORTDIR^"OSVAR",WAIT|LAAW_OPTION_HIDDEN);
+    
+    OpenFileMode (FILE_MODE_NORMAL); 
+     
+    OpenFile (nFileHandle, SUPPORTDIR, "OSVAR"); 
+    GetLine (nFileHandle, svLine);
+    CloseFile (nFileHandle); 
+
+    return svLine;
+   
+       
+end;
+
+
+function DeleteFolder(szFolderPath)   
+NUMBER nResult;   
+STRING szFileName;    
+LIST listID;
+begin  
+	if (ExistsDir (szFolderPath)=EXISTS) then 
+	WriteLogFile("There exits dir:"+szFolderPath); 
+	    nResult=FindAllFiles(szFolderPath,"*.*",szFileName,RESET);
+        while(nResult = 0)
+	        SetFileInfo (szFileName ,FILE_ATTRIBUTE , FILE_ATTR_NORMAL ,"" );
+	        nResult=FindAllFiles(szFolderPath,"*.*",szFileName,CONTINUE); 
+        endwhile;               
+        
+        DeleteAgain:
+        if DeleteDir(szFolderPath, ROOT)<0 then 
+        	nResult=SdFilesInUse("","Unable to delete the folder below. Maybe some files inside the folder are in use. Please check!",szFolderPath,listID);    
+        	if (nResult = IDRETRY) then
+       			goto DeleteAgain;   
+       		endif;
+        endif;
+        WriteLogFile("End delete folder"+szFolderPath); 
+    endif;		
+end; 
+
+function STRING ReadString(sStringDir ,sStringFile,bonlyline) 
+	STRING  svLine;
+	STRING  svResult;   
+    NUMBER   nFileHandle;  
+    NUMBER   nResult;    
+    NUMBER   nvResult;  
+begin           
+	nResult = FindFile ( sStringDir,  sStringFile, svResult ); 
+	if(0>nResult) then
+		return "";
+	endif;
+	if (bonlyline==TRUE) then 
+		OpenFileMode (FILE_MODE_NORMAL);    
+	else
+		OpenFileMode (FILE_MODE_BINARYREADONLY);
+	endif;
+	if(0>OpenFile(nFileHandle,sStringDir,sStringFile)) then
+		return "";                                                   		
+	endif;     
+	if (bonlyline==TRUE) then  
+	    if (GetLine (nFileHandle, svLine) != 0)  then 
+            svLine= "";    
+        endif;
+    else  
+    	GetFileInfo ( sStringDir + sStringFile, FILE_SIZE, nvResult, svResult ); 
+    	if (ReadBytes (nFileHandle, svLine, 0, nvResult) < 0) then 
+        	svLine= "";
+    	endif;
+	endif;    
+    CloseFile (nFileHandle);    
+    return svLine;
+end; 
+
+
+
+function StrIsNums( svStr )
+	NUMBER iLength, iVal; 
+begin
+	iVal = 0;
+	iLength = StrLength (svStr); 
+	while (iVal < iLength) 
+		if(  svStr[iVal] < '0' ||  svStr[iVal] > '9' ) then
+			return -1;                                                  
+		endif;
+		iVal++; 
+	endwhile;   
+	return 0;
+end; 
+
+function getParentPath(szPath,svParentPath) 
+LIST listID; 
+STRING svStr;
+NUMBER nResult;
+begin 
+   
+    StrRemoveLastSlash ( szPath );
+ 	listID = ListCreate (STRINGLIST); 
+ 	StrGetTokens ( listID , szPath , "\\" );  
+ 	ListSetIndex (listID, LISTLAST);   
+ 	ListDeleteString ( listID ); 
+ 	 	
+ 	ListGetFirstString(listID,svStr); 
+    svParentPath="";
+    while (nResult != END_OF_LIST) 
+    	svParentPath=svParentPath^svStr;
+    	nResult = ListGetNextString (listID, svStr);
+    endwhile;
+     	
+end; 
+
+function CheckPathSpecChar(spathtocheck)
+begin  
+	//return (1);
+	//#$%^&@~`!;',
+	if(StrFind (spathtocheck, "#")>-1 ||StrFind (spathtocheck, "$")>-1 ||StrFind (spathtocheck, "%")>-1 ||StrFind (spathtocheck, "^")>-1 ||StrFind (spathtocheck, "&")>-1 ||StrFind (spathtocheck, "@")>-1||StrFind (spathtocheck, "~")>-1||StrFind (spathtocheck, "`")>-1||StrFind (spathtocheck, "!")>-1||StrFind (spathtocheck, ";")>-1||StrFind (spathtocheck, "'")>-1||StrFind (spathtocheck, ",")>-1)  then
+		MessageBox("The Path can not include any of the following characters: #$%^&@~`!;', ", SEVERE);
+		return (0);                            
+	endif; 
+	return (1);
+end; 
+
+function WriteRegistryMongoConfig()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\MongoDBConfig","InstallDir",nvType,INSTALLDIR,nvSize);
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\MongoDBConfig","Version",nvType,MONGODB_VERSION,nvSize);
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\MongoDBConfig",FeatureMongoConfig,nvType,svFeatureMongoConfig,nvSize);
+    endif;
+    endif;   
+end;  
+
+function DoInstallServices()
+number nResult;
+begin   	          
+    WriteLogFile("Begin to InstallServices NetBrain NetWork Service 7");
+          
+    //nResult = RunApplication(INSTALLDIR ^ "bin\\nbproxyserver.exe","-install NS7",FALSE,TRUE,FALSE );
+    nResult = RunApplication(INSTALLDIR ^ "bin\\nbproxyserver.exe","-install",FALSE,TRUE,FALSE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to install nbproxyserver7"); 
+   	else    
+   		RunApplication(SystemFolder ^ "net.exe", "start \"proxyserver7\"",FALSE,TRUE,FALSE );
+    	WriteLogFile("Success to install nbproxyserver7");
+    endif;
+    
+end;   
+
+function DoUninstallServices()
+number nResult,nvResult;
+begin
+    if ( ServiceExistsService ( "proxyserver7" )) then 
+   		ServiceGetServiceState ("proxyserver7" , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The NetBrain proxyserver 7 Service has been stopped.");
+         else
+			ServiceStopService ( "proxyserver7"  ); 
+         endif;
+        nResult = RunApplication("taskkill" , "/F /IM nbproxyserver.exe /T", FALSE,TRUE,FALSE );
+        //nResult = RunApplication("taskkill" , "/F /IM NBProxyServerDaemon.exe /T", FALSE,TRUE,FALSE );
+        if (nResult!=0) then
+    		WriteLogFile("Fail to taskkill nbproxyserver.exe"); 
+    	else 
+    		WriteLogFile("Success to taskkill nbproxyserver.exe");
+    	endif;   
+   		RunApplication( INSTALLDIR ^ "bin\\nbproxyserver.exe","-remove", FALSE,TRUE,FALSE ); 
+   		ServiceRemoveService( "proxyserver7"  );
+   	else
+   	    WriteLogFile("There is no nbproxyserver7");
+   	endif;
+end;  
+
+function ProcessConfSettingback()   
+begin   
+	Disable(LOGGING);
+	if Is(FILE_EXISTS,INSTALLDIR^"conf"^"proxysetting_old.ini") then    
+		if Is(FILE_EXISTS,INSTALLDIR^"conf"^"proxysetting.ini") then 
+		DeleteFile ( INSTALLDIR^"conf"^"proxysetting.ini");	 	
+		endif;
+		RenameFile(INSTALLDIR^"conf"^"proxysetting_old.ini",INSTALLDIR^"conf"^"proxysetting.ini");
+	endif;     
+	Enable(LOGGING);
+end;
+
+function DoInstallMongoDB_shardServices()
+begin
+    WriteLogFile("Begin to install MongoDB_shard1Services");         
+    nResult = RunApplication(SUPPORTDIR ^ "InstallMongoDB_shardServices.bat","\"" + svMongoConfigInstalldir+"\""+" shard1"+" \"" + MongoDB_shard1Service+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to install MongoDB_shard1Services"); 
+   	else       		
+    	WriteLogFile("Success to install MongoDB_shard1Services");
+    endif;
+    
+    WriteLogFile("Begin to install MongoDB_shard2Services");        
+    nResult = RunApplication(SUPPORTDIR ^ "InstallMongoDB_shardServices.bat","\"" + svMongoConfigInstalldir+"\""+" shard2"+" \"" + MongoDB_shard2Service+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to install MongoDB_shard2Services"); 
+   	else       		
+    	WriteLogFile("Success to install MongoDB_shard2Services");
+    endif;
+    
+    WriteLogFile("Begin to install MongoDB_shard3Services");        
+    nResult = RunApplication(SUPPORTDIR ^ "InstallMongoDB_shardServices.bat","\"" + svMongoConfigInstalldir+"\""+" shard3"+" \"" + MongoDB_shard3Service+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to install MongoDB_shard3Services"); 
+   	else       		
+    	WriteLogFile("Success to install MongoDB_shard3Services");
+    endif;
+end;
+function DoUninstallMongoDB_shardServices()
+begin
+    if ( ServiceExistsService (MongoDB_shard1Service)) then 
+   		ServiceGetServiceState (MongoDB_shard1Service , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The MongoDB_shard1Service has been stopped.");
+         else
+			ServiceStopService (MongoDB_shard1Service); 
+         endif;
+        nResult = RunApplication("taskkill" , "/F /IM mongod.exe /T", FALSE,TRUE,FALSE );     
+        if (nResult!=0) then
+    		WriteLogFile("Fail to taskkill mongod.exe"); 
+    	else 
+    		WriteLogFile("Success to taskkill mongod.exe");
+    	endif;   
+   		ServiceRemoveService(MongoDB_shard1Service);
+   	else
+   	    WriteLogFile("There is no MongoDB_shard1Service");
+   	endif;  
+   	
+   	    if ( ServiceExistsService (MongoDB_shard2Service)) then 
+   		ServiceGetServiceState (MongoDB_shard2Service , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The MongoDB_shard2Service has been stopped.");
+         else
+			ServiceStopService (MongoDB_shard2Service); 
+         endif;
+        nResult = RunApplication("taskkill" , "/F /IM mongod.exe /T", FALSE,TRUE,FALSE );     
+        if (nResult!=0) then
+    		WriteLogFile("Fail to taskkill mongod.exe"); 
+    	else 
+    		WriteLogFile("Success to taskkill mongod.exe");
+    	endif;   
+   		ServiceRemoveService(MongoDB_shard2Service);
+   	else
+   	    WriteLogFile("There is no MongoDB_shard2Service");
+   	endif;   
+   	
+   	    if ( ServiceExistsService (MongoDB_shard3Service)) then 
+   		ServiceGetServiceState (MongoDB_shard3Service , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The MongoDB_shard3Service has been stopped.");
+         else
+			ServiceStopService (MongoDB_shard3Service); 
+         endif;
+        nResult = RunApplication("taskkill" , "/F /IM mongod.exe /T", FALSE,TRUE,FALSE );     
+        if (nResult!=0) then
+    		WriteLogFile("Fail to taskkill mongod.exe"); 
+    	else 
+    		WriteLogFile("Success to taskkill mongod.exe");
+    	endif;   
+   		ServiceRemoveService(MongoDB_shard3Service);
+   	else
+   	    WriteLogFile("There is no MongoDB_shard3Service");
+   	endif;    
+end;
+function DoInstallMongoDB_configsvrServices() 
+begin
+    WriteLogFile("Begin to install MongoDB_configsvrServices");        
+    nResult = RunApplication(SUPPORTDIR ^ "InstallMongoDB_configsvrServices.bat","\"" + svMongoConfigInstalldir+"\""+" \"" + MongoDB_configsvrService+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to install MongoDB_configsvrServices"); 
+   	else       		
+    	WriteLogFile("Success to install MongoDB_configsvrServices");
+    endif;
+end;
+function DoUninstallMongoDB_configsvrServices()
+begin
+    if ( ServiceExistsService (MongoDB_configsvrService)) then 
+   		ServiceGetServiceState (MongoDB_configsvrService , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The MongoDB_configsvrService has been stopped.");
+         else
+			ServiceStopService (MongoDB_configsvrService); 
+         endif;
+        nResult = RunApplication("taskkill" , "/F /IM mongod.exe /T", FALSE,TRUE,FALSE );     
+        if (nResult!=0) then
+    		WriteLogFile("Fail to taskkill mongod.exe"); 
+    	else 
+    		WriteLogFile("Success to taskkill mongod.exe");
+    	endif;   
+   		ServiceRemoveService(MongoDB_configsvrService);
+   	else
+   	    WriteLogFile("There is no MongoDB_configsvrService");
+   	endif;   
+end;
+function DoInstallMongoDB_mongosServices()
+begin
+    WriteLogFile("Begin to install MongoDB_configsvrServices");        
+    nResult = RunApplication(SUPPORTDIR ^ "InstallMongoDB_mongosServices.bat","\"" + svMongoConfigInstalldir+"\""+" \"" + MongoDB_mongosService+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to install MongoDB_mongosServices"); 
+   	else       		
+    	WriteLogFile("Success to install MongoDB_mongosServices");
+    endif;
+end;
+function DoUninstallMongoDB_mongosServices()
+begin
+if ( ServiceExistsService (MongoDB_mongosService)) then 
+   		ServiceGetServiceState (MongoDB_mongosService , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The MongoDB_mongosService has been stopped.");
+         else
+			ServiceStopService (MongoDB_mongosService); 
+         endif;
+        nResult = RunApplication("taskkill" , "/F /IM mongos.exe /T", FALSE,TRUE,FALSE );     
+        if (nResult!=0) then
+    		WriteLogFile("Fail to taskkill mongos.exe"); 
+    	else 
+    		WriteLogFile("Success to taskkill mongos.exe");
+    	endif;   
+   		ServiceRemoveService(MongoDB_mongosService);
+   	else
+   	    WriteLogFile("There is no MongoDB_mongosService");
+   	endif;
+end;
+
+function DoConfigMongoDB_shard()
+begin
+    WriteLogFile("Begin to config MongoDB_shard1");         
+    nResult = RunApplication(SUPPORTDIR ^ "MongoDb_ReplicaSet_Config.bat","\"" + svMongoConfigInstalldir+"\""+" shard1"+" \"" + svShard1port+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to config MongoDB_shard1");
+   		MessageBox("Fail to config MongoDB_shard1",SEVERE); 
+   		abort;
+   	else       		
+    	WriteLogFile("Success to config MongoDB_shard1");
+    endif;
+        WriteLogFile("Begin to config MongoDB_shard2");         
+    nResult = RunApplication(SUPPORTDIR ^ "MongoDb_ReplicaSet_Config.bat","\"" + svMongoConfigInstalldir+"\""+" shard2"+" \"" + svShard2port+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to config MongoDB_shard2"); 
+   		MessageBox("Fail to config MongoDB_shard2",SEVERE); 
+   		abort;
+   	else       		
+    	WriteLogFile("Success to config MongoDB_shard2");
+    endif;
+        WriteLogFile("Begin to config MongoDB_shard1");         
+    nResult = RunApplication(SUPPORTDIR ^ "MongoDb_ReplicaSet_Config.bat","\"" + svMongoConfigInstalldir+"\""+" shard3"+" \"" + svShard3port+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to config MongoDB_shard3"); 
+   		MessageBox("Fail to config MongoDB_shard3",SEVERE); 
+   		abort;
+   	else       		
+    	WriteLogFile("Success to config MongoDB_shard3");
+    endif;   
+end;
+function DoConfigMongoDB_configsvr()
+begin
+    WriteLogFile("Begin to config MongoDB_configsvr");         
+    nResult = RunApplication(SUPPORTDIR ^ "MongoDb_ConfigServer_Config.bat","\"" + svMongoConfigInstalldir+"\""+" \"" + svConfigServerport+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to config MongoDB_configsvr"); 
+   		MessageBox("Fail to config MongoDB_configsvr",SEVERE); 
+   		abort;
+   	else       		
+    	WriteLogFile("Success to config MongoDB_configsvr");
+    endif;
+end;
+function DoConfigMongoDB_mongos()
+begin
+    WriteLogFile("Begin to config MongoDB_configsvr");         
+    nResult = RunApplication(SUPPORTDIR ^ "MongoDb_Mongos_Config.bat","\"" + svMongoConfigInstalldir+"\""+" \"" + svConfigServerport+"\""+" \"" + svMongosport+"\""+" \"" + svMongosIP+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   		WriteLogFile("Fail to config MongoDB_mongos"); 
+   		MessageBox("Fail to config MongoDB_mongos",SEVERE); 
+   		abort;
+   	else       		
+    	WriteLogFile("Success to config MongoDB_mongos");
+    endif;
+end;
+
+function WriteRegistryMongos()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\MongoDBConfig",FeatureMongos,nvType,svFeatureMongos,nvSize);
+    endif;
+    endif;   
+end;
+
+function WriteRegistryMongoPy()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\MongoDBConfig","Python_Version",nvType,PYTHON_VERSION,nvSize);
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\MongoDBConfig","PyMongo_Version",nvType,PYMONGO_VERSION,nvSize);
+   		RegDBSetKeyValueEx("SOFTWARE\\NetBrain\\MongoDBConfig",FeatureMongoPy,nvType,svFeatureMongoPy,nvSize);
+    endif;
+    endif;   
+end;
+
+function FormatVer(szVer,svVer) 
+	LIST   listID;  
+	NUMBER nvNum,iCount; 
+	NUMBER nvReturn;
+begin	
+	listID = ListCreate (STRINGLIST);
+	if (listID = LIST_NULL) then 
+		return -1;
+	endif; 
+	
+	nvReturn = StrGetTokens (listID, szVer, ".");
+	
+	if ( nvReturn = 0 ) then   
+		nvNum = ListCount (listID);
+		ListSetIndex (listID, LISTLAST);
+		 
+		for iCount = nvNum to 4-1  
+			ListAddString (listID,"0",AFTER); 
+		endfor;  
+		
+		nvReturn = StrPutTokens (listID,svVer,".",FALSE);
+	endif;
+	
+	ListDestroy (listID);
+    
+    return nvReturn;
+    	
+end; 
+
+function CopyFileToDes(szSourcefile,szDestfile)
+    NUMBER nResult; 
+begin 
+	Disable(LOGGING);
+    WriteLogFile ("Copy "+szSourcefile+" to "+szDestfile);
+    
+    nResult = CopyFile(szSourcefile, szDestfile); 
+    
+    // Report the results of the copy operation. 
+    switch (nResult) 
+        case 0: 
+            WriteLogFile ("Files successfully copied."); 
+        case COPY_ERR_CREATEDIR: 
+            WriteLogFile ("A target directory could not be created."); 
+        case COPY_ERR_MEMORY: 
+            WriteLogFile ("Insufficient memory."); 
+        case COPY_ERR_NODISKSPACE: 
+            WriteLogFile ("Insufficint disk space.");
+        case COPY_ERR_OPENINPUT: 
+            WriteLogFile ("Unable to open the input files in "+ szSourcefile); 
+        case COPY_ERR_OPENOUTPUT: 
+            WriteLogFile ("Unable to copy the source files."); 
+        case COPY_ERR_TARGETREADONLY: 
+            WriteLogFile ("A target file already exists and cannot be overwritten."); 
+        default:
+            WriteLogFile ("An unspecified error occurred. "+FormatMessage(nResult)); 
+    endswitch;  
+    Enable(LOGGING);
+end;
+
+function NUMBER checkIPAddress( svIP )
+ NUMBER n;
+ begin
+ RegDBDisConnectRegistry( 0 ); // in case it's already open
+ n = RegDBConnectRegistry ( svIP, HKEY_LOCAL_MACHINE, 0 );
+ RegDBDisConnectRegistry( 0 );
+ return n;
+ end; 

@@ -1,0 +1,720 @@
+typedef SYSTIME
+begin
+    SHORT nYear;
+    SHORT nMonth;
+    SHORT nDayOfWeek;
+    SHORT nDay;
+    SHORT nHour;
+    SHORT nMinute;
+    SHORT nSecond;
+    SHORT nMillisecond;
+end;
+
+prototype HWND kernel32.OpenMutexA(NUMBER, BOOL, BYVAL STRING);
+prototype HWND kernel32.CreateMutexA(NUMBER, BOOL, BYVAL STRING);
+prototype HWND kernel32.GetSystemTime(SYSTIME POINTER);
+
+prototype STRING RecordTimeLog();
+prototype WriteLogFile( STRING );
+prototype DeleteLogFile(); 
+prototype RunApplication(STRING , STRING, BOOL, BOOL, BOOL); 
+prototype RunApplicationWithLog(STRING , STRING, BOOL, BOOL, BOOL, BOOL); 
+prototype STRING ReadString(STRING,STRING,BOOL);
+prototype DeleteFolder(STRING);
+prototype CheckPathSpecChar(STRING);
+prototype CheckPathSpecCharSlient(STRING);
+prototype writeinfouninstall();
+prototype DoUninstallRMServices();
+prototype FormatVer(STRING,BYREF STRING); 
+prototype CopyFileToDes(STRING,STRING); 
+prototype cdecl BOOL WriteVersion.AU_WriteInfo(BYVAL STRING,BYVAL STRING,BYVAL STRING);
+prototype cdecl BOOL WriteVersion.AU_GenerateGuid(BYVAL STRING);
+prototype ShowListContentFromTxt(STRING,STRING,LIST,STRING,STRING);
+prototype WriteRegistryDump();
+prototype DeleteRegistryDump();
+prototype GetOSVer();
+prototype WriteInfo();
+prototype STRING GetOSEnvVar(STRING);
+
+prototype CheckIIS();
+prototype Checkdotnetframework45();
+prototype IISInstalled(STRING);
+prototype InstallIIS(STRING);
+prototype AspNetInstalled(STRING);
+prototype InstallAspNet(STRING);
+prototype CheckAspnetState();
+prototype STRING GetEncyptedString(STRING);
+prototype WriteFileLineBinary(STRING, STRING, STRING);
+prototype STRING ReadFileLine(STRING, STRING);
+
+function WriteLogFile( svContent )   
+	NUMBER   FileHandle;   
+	NUMBER   nResult;
+	STRING	 svResult;
+begin           
+	nResult = FindFile ( LOGFILE_PATH,  LOGFILE_NAME, svResult ); 
+	
+	OpenFileMode (FILE_MODE_APPEND);  
+	if( nResult < 0 ) then
+		nResult = CreateFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	else
+		nResult = OpenFile(FileHandle, LOGFILE_PATH,  LOGFILE_NAME );  
+	endif;
+	
+	if( nResult < 0 ) then  
+		return -1;
+	endif; 
+ 
+	nResult = WriteLine(FileHandle,"");
+	nResult = WriteLine(FileHandle,RecordTimeLog());
+ 
+    nResult = WriteLine(FileHandle,svContent);     
+    CloseFile(FileHandle);    
+    return 0;
+end; 
+
+function STRING RecordTimeLog()
+	number  nvReturn1;
+	string  svResult1,szDateTimetmp, szUtc;
+	SYSTIME now;
+begin   	
+	GetSystemInfo( DATE, nvReturn1, svResult1 );  
+	szDateTimetmp = svResult1;
+	szDateTimetmp = szDateTimetmp + " ";
+	GetSystemInfo( TIME, nvReturn1, svResult1 );
+	szDateTimetmp = szDateTimetmp + svResult1; 
+	
+	GetSystemTime(&now);
+
+    Sprintf(szUtc, "(UTC: %d-%d-%d %d:%0.2d:%0.2d:%0.3d)", 
+			now.nMonth, now.nDay, now.nYear, 
+			now.nHour, now.nMinute, now.nSecond, now.nMillisecond);
+
+	szDateTimetmp = szDateTimetmp + " " + szUtc; 
+
+	return szDateTimetmp;
+end;
+
+function RunApplication(cmd, param, bShow, bWait, bShell)
+begin
+	return RunApplicationWithLog(cmd, param, bShow, bWait, bShell, TRUE);
+end;
+
+function RunApplicationWithLog(cmd, param, bShow, bWait, bShell, bLog)
+    number nShowWindow;
+    number nOptions;
+    STRING result;
+begin
+	LongPathToQuote(cmd, TRUE);
+
+	if (bShell = TRUE) then 
+		param = param + " >> "+ LOGFILE + " 2>>^&1";                 
+	endif;
+
+	nShowWindow = SW_NORMAL;
+	nOptions = LAAW_OPTION_CHANGEDIRECTORY | LAAW_OPTION_FIXUP_PROGRAM;
+
+	if (bShow = FALSE ) then 
+		nShowWindow = SW_HIDE; 
+		nOptions |= LAAW_OPTION_HIDDEN;
+	endif;
+
+	if (bWait = TRUE) then 
+		nOptions |= LAAW_OPTION_WAIT; 
+	else                           
+		nOptions |= LAAW_OPTION_NOWAIT; 
+	endif;
+	
+	LaunchApplication(cmd, param, "", nShowWindow, INFINITE, nOptions); 
+
+	if (bLog) then
+		WriteLogFile("CommandLineResult: " + LAAW_PARAMETERS.szCommandLineResult);
+	endif;
+		
+	NumToStr(result, LAAW_PARAMETERS.nLaunchResult);
+	WriteLogFile(cmd + ":" + result);
+	
+	return LAAW_PARAMETERS.nLaunchResult;
+	     
+end;
+
+function DeleteLogFile() 
+	NUMBER nvRet;
+begin
+
+    nvRet = DeleteFile ( LOGFILE_PATH + LOGFILE_NAME );
+    if( nvRet = 0 || nvRet = ISERR_FILE_NOT_FOUND  ) then 
+    	return 0;
+    else 
+    	return -1;
+    endif;
+end;    
+
+function DeleteFolder(szFolderPath)   
+	NUMBER nResult;   
+	STRING szFileName;    
+	LIST listID;
+begin  
+	if (ExistsDir (szFolderPath)=EXISTS) then 
+	WriteLogFile("There exits dir:"+szFolderPath); 
+	    nResult=FindAllFiles(szFolderPath,"*.*",szFileName,RESET);
+        while(nResult = 0)
+	        SetFileInfo (szFileName ,FILE_ATTRIBUTE , FILE_ATTR_NORMAL ,"" );
+	        nResult=FindAllFiles(szFolderPath,"*.*",szFileName,CONTINUE); 
+        endwhile;               
+        
+        DeleteAgain:
+        if DeleteDir(szFolderPath, ROOT)<0 then 
+        	nResult=SdFilesInUse("Files in Use","Can not delete the following folder(s) because files are being used. Save your work and click Retry to continue.",szFolderPath,listID);    
+        	if (nResult = IDRETRY) then
+       			goto DeleteAgain;   
+       		endif;
+        endif;
+        WriteLogFile("End delete folder"+szFolderPath); 
+    endif;		
+end; 
+
+function STRING ReadString(sStringDir ,sStringFile,bonlyline) 
+	STRING  svLine;
+	STRING  svResult;   
+    NUMBER   nFileHandle;  
+    NUMBER   nResult;    
+    NUMBER   nvResult;  
+begin           
+	nResult = FindFile ( sStringDir,  sStringFile, svResult ); 
+	if(0>nResult) then
+		return "";
+	endif;
+	if (bonlyline==TRUE) then 
+		OpenFileMode (FILE_MODE_NORMAL);    
+	else
+		OpenFileMode (FILE_MODE_BINARYREADONLY);
+	endif;
+	if(0>OpenFile(nFileHandle,sStringDir,sStringFile)) then
+		return "";                                                   		
+	endif;     
+	if (bonlyline==TRUE) then  
+	    if (GetLine (nFileHandle, svLine) != 0)  then 
+            svLine= "";    
+        endif;
+    else  
+    	GetFileInfo ( sStringDir + sStringFile, FILE_SIZE, nvResult, svResult ); 
+    	if (ReadBytes (nFileHandle, svLine, 0, nvResult) < 0) then 
+        	svLine= "";
+    	endif;
+	endif;    
+    CloseFile (nFileHandle);    
+    return svLine;
+end; 
+
+function CheckPathSpecChar(spathtocheck)
+begin  
+	if(StrFind (spathtocheck, "#")>-1 ||StrFind (spathtocheck, "$")>-1 ||StrFind (spathtocheck, "%")>-1 ||StrFind (spathtocheck, "^")>-1 ||StrFind (spathtocheck, "&")>-1 ||StrFind (spathtocheck, "@")>-1||StrFind (spathtocheck, "~")>-1||StrFind (spathtocheck, "`")>-1||StrFind (spathtocheck, "!")>-1||StrFind (spathtocheck, ";")>-1||StrFind (spathtocheck, "'")>-1||StrFind (spathtocheck, ",")>-1)  then
+		MessageBox("The Path can not include any of the following characters: #$%^&@~`!;', ", SEVERE);
+		return (0);                            
+	endif; 
+	return (1);
+end; 
+
+function writeinfouninstall()
+begin
+	UseDLL ( DLLNAME ); 
+	AU_WriteInfo(SETUPTYPE,"status","0");     
+	UnUseDLL ( DLLNAME );
+end;
+
+function FormatVer(szVer,svVer) 
+	LIST   listID;  
+	NUMBER nvNum,iCount; 
+	NUMBER nvReturn;
+begin	
+	listID = ListCreate (STRINGLIST);
+	if (listID = LIST_NULL) then 
+		return -1;
+	endif; 
+	
+	nvReturn = StrGetTokens (listID, szVer, ".");
+	
+	if ( nvReturn = 0 ) then   
+		nvNum = ListCount (listID);
+		ListSetIndex (listID, LISTLAST);
+		 
+		for iCount = nvNum to 4-1  
+			ListAddString (listID,"0",AFTER); 
+		endfor;  
+		
+		nvReturn = StrPutTokens (listID,svVer,".",FALSE);
+	endif;
+	
+	ListDestroy (listID);
+    
+    return nvReturn;
+    	
+end; 
+
+function CopyFileToDes(szSourcefile,szDestfile)
+    NUMBER nResult; 
+begin 
+	Disable(LOGGING);
+    WriteLogFile ("Copy "+szSourcefile+" to "+szDestfile);
+    
+    nResult = CopyFile(szSourcefile, szDestfile); 
+    
+    // Report the results of the copy operation. 
+    switch (nResult) 
+        case 0: 
+            WriteLogFile ("Files successfully copied."); 
+        case COPY_ERR_CREATEDIR: 
+            WriteLogFile ("A target directory could not be created."); 
+        case COPY_ERR_MEMORY: 
+            WriteLogFile ("Insufficient memory."); 
+        case COPY_ERR_NODISKSPACE: 
+            WriteLogFile ("Insufficint disk space.");
+        case COPY_ERR_OPENINPUT: 
+            WriteLogFile ("Unable to open the input files in "+ szSourcefile); 
+        case COPY_ERR_OPENOUTPUT: 
+            WriteLogFile ("Unable to copy the source files."); 
+        case COPY_ERR_TARGETREADONLY: 
+            WriteLogFile ("A target file already exists and cannot be overwritten."); 
+        default:
+            WriteLogFile ("An unspecified error occurred. "+FormatMessage(nResult)); 
+    endswitch;  
+    Enable(LOGGING);
+end;
+
+function ShowListContentFromTxt(svlisttitle,svlistmsg,listMongodbiniterror,svtxtpath,svtxtname)
+	STRING  svLine;
+    NUMBER  nvFileHandle;
+begin 
+	// Set the file mode to normal.
+    OpenFileMode (FILE_MODE_NORMAL);
+
+    // Open the text file.
+    if (OpenFile (nvFileHandle, svtxtpath, svtxtname) < 0) then
+        WriteLogFile(svtxtpath+svtxtname+" can not be opened. ");
+    endif;
+
+    // Read lines from the text file into the string list.
+    while GetLine (nvFileHandle, svLine) = 0
+        ListAddString (listMongodbiniterror, svLine, AFTER);
+    endwhile;
+
+    // Close the file.
+    if (CloseFile (nvFileHandle) < 0) then
+        WriteLogFile(svtxtpath+svtxtname+" can not be closed. ");
+    endif;
+
+    // Display the text that was read from the file.
+    SdShowInfoList (svlisttitle,svlistmsg, listMongodbiniterror);
+end;
+
+function CheckPathSpecCharSlient(spathtocheck)
+begin  
+	if(StrFind (spathtocheck, "#")>-1 ||StrFind (spathtocheck, "$")>-1 ||StrFind (spathtocheck, "%")>-1 ||StrFind (spathtocheck, "^")>-1 ||StrFind (spathtocheck, "&")>-1 ||StrFind (spathtocheck, "@")>-1||StrFind (spathtocheck, "~")>-1||StrFind (spathtocheck, "`")>-1||StrFind (spathtocheck, "!")>-1||StrFind (spathtocheck, ";")>-1||StrFind (spathtocheck, "'")>-1||StrFind (spathtocheck, ",")>-1)  then
+		return (0);                            
+	endif; 
+	return (1);
+end; 
+
+function WriteRegistryDump()
+	NUMBER nvSize,nvType, nvReturn;
+	STRING svTemp, svResult;
+begin
+    if(SYSINFO.bIsWow64) then 
+    REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	nvType = REGDB_STRING; 
+    nvSize = -1;  
+    if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpFolder",nvType,DUMP_PATH,nvSize);
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpCount",REGDB_NUMBER,"10",nvSize);
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"DumpType",REGDB_NUMBER,"2",nvSize); 
+   		RegDBSetKeyValueEx(REG_LOCALDUMPS,"CustomDumpFlags",REGDB_NUMBER,"0",nvSize);     		
+    endif;
+    endif;   
+end;  
+
+function DeleteRegistryDump()
+
+begin
+ if(SYSINFO.bIsWow64) then 
+     REGDB_OPTIONS = REGDB_OPTIONS | REGDB_OPTION_WOW64_64KEY;
+	if (RegDBSetDefaultRoot (HKEY_LOCAL_MACHINE) = 0) then
+    	RegDBDeleteKey (REG_LOCALDUMPS);
+ 	endif;
+ endif;
+end;
+
+function GetOSVer()
+begin
+	if((SYSINFO.WINNT.bWinVista_Server2008) || (SYSINFO.WINNT.bWin7_Server2008R2) ) then
+		svOSVer = "win2008";
+	endif;
+
+	if((SYSINFO.WINNT.bWin8) || (SYSINFO.WINNT.bWin81) ) then
+		svOSVer = "win2012";
+	endif;
+	
+	WriteLogFile ("OS Version: " + svOSVer); 
+end;
+
+function IISInstalled(versionNumber)
+	STRING szValue;  
+	NUMBER nvSize, nvType, nvValue, nvVersion;
+begin  
+	RegDBSetDefaultRoot(HKEY_LOCAL_MACHINE);  
+
+	if (RegDBKeyExist ("SOFTWARE\\Microsoft\\InetStp" ) < 0) then  
+		return 0;  
+	endif;
+
+	nvType = REGDB_NUMBER;                                                             
+
+	if (RegDBGetKeyValueEx("SOFTWARE\\Microsoft\\InetStp", "MajorVersion",
+							nvType, szValue, nvSize) < 0 ) then 
+		return 0;
+	endif; 
+
+	StrToNum(nvValue, szValue);
+	StrToNum(nvVersion, versionNumber);
+
+	if (nvValue < nvVersion) then
+		return 0;
+	endif;
+
+	return 1;  
+end;
+
+function InstallIIS(versionNumber)
+	STRING szValue, szCommand, szArgs;  
+	NUMBER nResult, nvType, nvValue;
+begin  
+    SetStatusWindow(5, "Installing Internet Information Service " + versionNumber);
+	nResult = RunApplication(SUPPORTDIR ^ "ConfigIIS.bat",
+							 "\"" + SUPPORTDIR + "\" " + versionNumber,
+							 FALSE, TRUE, TRUE);
+
+	if (nResult != 0) then
+		WriteLogFile("Failed to install IIS version " + versionNumber);
+		return 0;
+	else
+		WriteLogFile("Successfully installed IIS version " + versionNumber);		
+	endif;
+	
+	return 1;  
+end;
+
+function AspNetInstalled(AspNet)
+	STRING szValue;  
+	NUMBER nvSize, nvType, nvValue;
+begin  
+	RegDBSetDefaultRoot(HKEY_LOCAL_MACHINE);  
+
+	if (RegDBKeyExist ("SOFTWARE\\Microsoft\\InetStp\\Components" ) < 0) then  
+		WriteLogFile(AspNet + " not installed.");
+		return 0;  
+	endif;
+
+	nvType = REGDB_NUMBER;                                                             
+
+	if (RegDBGetKeyValueEx("SOFTWARE\\Microsoft\\InetStp\\Components", AspNet,
+							nvType, szValue, nvSize) < 0 ) then 
+		WriteLogFile(AspNet + " not installed.");
+		return 0;
+	endif; 
+
+	StrToNum(nvValue, szValue);
+
+	if (nvValue != 1) then
+		return 0;
+	endif;
+
+	return 1;  
+end;
+
+function InstallAspNet(AspNet)
+	STRING szValue, szCommand, szArgs;  
+	NUMBER nResult, nvType, nvValue;
+begin  
+    SetStatusWindow(10, "Installing ASP.NET");
+
+	nResult = RunApplication(SUPPORTDIR ^ "ConfigAspNet.bat",
+							 "\"" + SUPPORTDIR + "\" " + AspNet,
+							 FALSE, TRUE, TRUE);
+
+	if (nResult != 0) then
+		WriteLogFile("Failed to install " + AspNet);
+		return 0;
+	else
+		WriteLogFile("Successfully installed " + AspNet);
+	endif;
+	
+	return 1;  
+end;
+
+function CheckAspnetState()
+	STRING szValue, szCommand, szArgs;  
+	NUMBER nvSize, nvType, nvValue;
+begin  
+	RegDBSetDefaultRoot ( HKEY_LOCAL_MACHINE );  
+
+	if (RegDBKeyExist ("System\\CurrentControlSet\\Services\\aspnet_state" ) < 0 ) then  
+		return 0;  
+	endif;
+
+	nvType = REGDB_NUMBER;                                                             
+
+	if (RegDBGetKeyValueEx("System\\CurrentControlSet\\Services\\aspnet_state",
+							"Start", nvType, szValue, nvSize) < 0) then 
+		return 0 ;
+	endif; 
+
+	StrToNum(nvValue, szValue);
+
+	// Startup type not equal to automatic
+	if(nvValue != 2) then
+		szCommand = System64Folder ^ "sc.exe";
+		szArgs = "config aspnet_state start=auto";
+		
+		if (RunApplication(szCommand, szArgs, FALSE, TRUE, FALSE) != 0) then
+			WriteLogFile("Failed to run: " + szCommand + " " + szArgs);
+			return 0;
+		else
+			WriteLogFile("Successfully run: " + szCommand + " " + szArgs);		
+		endif;
+	endif;
+	
+	return 1;  
+end;
+   
+function WriteInfo()
+	STRING svStr,svDateTime,svDate,svTime,svYear,svMonth,svDay;
+	NUMBER nvDate,nvTime,nId; 
+	LIST   listID;
+	STRING svLogPath,svALLUSERSPROFILE;
+begin
+     WriteLogFile("Write info for allusersprofile");
+     //RunApplication(SUPPORTDIR^"mknetbrain.bat","\""+SETUPTYPE+"\"", FALSE,TRUE,FALSE );
+     
+	 GetSystemInfo(DATE,nvDate,svDate);
+	 
+	 listID = ListCreate (STRINGLIST);
+	 StrGetTokens (listID, svDate, "-");  
+	 ListGetFirstString (listID, svMonth); 
+	 ListGetNextString (listID, svDay);
+	 ListGetNextString (listID, svYear); 
+	 ListDestroy (listID); 
+	 StrToNum ( nId, svMonth );
+	 if (nId <10) then  
+	 svMonth= "0"+svMonth;
+	 endif;
+	 StrToNum ( nId, svDay );
+	 if (nId <10) then  
+	 svDay= "0"+svDay;
+	 endif;
+	 svDate=svYear+"/"+svMonth+"/"+svDay;
+	  
+	 GetSystemInfo(TIME,nvTime,svTime);
+	 
+	 svDateTime=svDate+" "+svTime; 
+	 
+	 svALLUSERSPROFILE = GetOSEnvVar("ALLUSERSPROFILE"); 
+	 
+	 StrTrim ( svALLUSERSPROFILE );
+	 
+	 svLogPath=svALLUSERSPROFILE^"NetBrain"^"UpdateLog"^SETUPTYPE;
+	 	 
+	 UseDLL ( DLLNAME ); 
+	 AU_GenerateGuid(SETUPTYPE);
+	 AU_WriteInfo(SETUPTYPE,"Type",SETUPTYPE);
+	 AU_WriteInfo(SETUPTYPE,"Version",IFX_PRODUCT_VERSION);
+	 AU_WriteInfo(SETUPTYPE,"ViewVersion",VIEWVERSION); 
+	 AU_WriteInfo(SETUPTYPE,"Patch","");
+	 AU_WriteInfo(SETUPTYPE,"LastUpgradeTime",svDateTime);
+	 AU_WriteInfo(SETUPTYPE,"status","1");
+	 AU_WriteInfo(SETUPTYPE,"LastPatchTime","");
+	 AU_WriteInfo(SETUPTYPE,"InstallFolder",INSTALLDIR);
+	 AU_WriteInfo(SETUPTYPE,"UpgradeLogPath",svLogPath);       
+	 UnUseDLL ( DLLNAME );
+	 
+end;
+
+function STRING GetOSEnvVar(svOSvar) 
+NUMBER nFileHandle;   
+STRING svLine;
+begin   
+
+	LaunchAppAndWait( SystemFolder^"cmd.exe" , "/c echo %"+svOSvar+"% >"+SUPPORTDIR^"OSVAR",WAIT|LAAW_OPTION_HIDDEN);
+
+	OpenFileMode (FILE_MODE_NORMAL); 
+	 
+	OpenFile (nFileHandle, SUPPORTDIR, "OSVAR"); 
+	GetLine (nFileHandle, svLine);
+	CloseFile (nFileHandle); 
+
+	return svLine;
+
+end;
+
+function CheckIIS()  
+	STRING szValue;  
+	NUMBER nvSize,nvType,nvValue;
+begin  
+	RegDBSetDefaultRoot(HKEY_LOCAL_MACHINE);  
+
+	if (RegDBKeyExist("System\\CurrentControlSet\\Services\\W3SVC") < 0 ) then  
+		return 0;  
+	endif;
+ 
+ 	nvType = REGDB_STRING;                                                             
+
+ 	if( RegDBGetKeyValueEx("System\\CurrentControlSet\\Services\\W3SVC","DisplayName",nvType,szValue,nvSize) < 0) then 
+ 		return 0;
+ 	endif;  
+
+	// Check Startup type.
+	nvType = REGDB_NUMBER;
+
+	if (RegDBGetKeyValueEx("System\\CurrentControlSet\\Services\\W3SVC",
+						   "Start", nvType, szValue, nvSize) < 0) then 
+		return 0;
+	endif;
+
+	StrToNum(nvValue, szValue);
+
+	if(nvValue != 2) then
+		if(RunApplication("sc config W3SVC start=auto", "", FALSE, TRUE, TRUE) = 0) then
+			if(RunApplication("sc start W3SVC", "", FALSE, TRUE, TRUE) != 0) then
+				return 0;
+			endif;
+		else
+			return 0;
+		endif; 	
+	endif;
+	
+	return 1;  
+end;
+
+function Checkdotnetframework45()
+	STRING szValue;  
+	NUMBER nvSize,nvType,nvValue;
+begin
+	RegDBSetDefaultRoot(HKEY_LOCAL_MACHINE);  
+
+	if (RegDBKeyExist("SOFTWARE\\Microsoft\\NET Framework Setup" ) < 0 ) then  
+		WriteLogFile("Registry entry does not exist: SOFTWARE\\Microsoft\\NET Framework Setup");
+		return 0;  
+	endif;
+
+	nvType = REGDB_NUMBER;                                                             
+
+	if( RegDBGetKeyValueEx("SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full","Release",nvType,szValue,nvSize) < 0 ) then 
+		WriteLogFile("Registry entry does not exist: SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full");
+		return 0;
+	endif;
+
+	// .Net Framework 4.5 release = 378389
+	StrToNum(nvValue, szValue);
+
+	if (nvValue < 378389) then
+		WriteLogFile(".Net build 378389 does not exist.");
+		return 0;
+	endif;  
+
+	WriteLogFile(".Net build 378389 exists.");
+
+	return 1;
+end;
+
+function STRING GetEncyptedString(content)
+	STRING svSrcFilePath, svSrcFile;
+	STRING svDestFilePath, svDestFile;
+	STRING svLine;
+	NUMBER nResult;
+begin
+	if (GetTempFileNameIS(TempFolder, "", 0, svSrcFilePath, GTFIS_OPTION_NONE) < ISERR_SUCCESS) then
+		WriteLogFile("Failed to get temp file name.");
+		return "";
+	endif;
+
+	ParsePath(svSrcFile, svSrcFilePath, FILENAME);
+
+	if (GetTempFileNameIS(TempFolder, "", 0, svDestFilePath, GTFIS_OPTION_NONE) < ISERR_SUCCESS) then
+		WriteLogFile("Failed to get temp file name.");
+		return "";
+	endif;
+
+	ParsePath(svDestFile, svDestFilePath, FILENAME);
+
+	if (WriteFileLineBinary(TempFolder, svSrcFile, content) < 0) then 
+		WriteLogFile("Failed to write to create encrypt file.");
+		return "";
+	endif;
+
+	nResult = RunApplication(SUPPORTDIR ^ "EncryptFile.exe", 
+							 svSrcFilePath + " " + svDestFilePath,
+							 FALSE, TRUE, FALSE);
+
+	if (nResult < 0) then 
+		WriteLogFile("Failed to encrypt the string.");
+		return "";        
+	endif;	
+
+	svLine= ReadFileLine(TempFolder, svDestFile);
+
+	DeleteFile(svSrcFilePath);
+	DeleteFile(svDestFilePath);
+
+	return svLine;
+end;
+
+function WriteFileLineBinary(filePath, fileName, line)
+	STRING svResult;
+	NUMBER nResult;
+	NUMBER nFileHandle;
+begin
+	OpenFileMode (FILE_MODE_BINARY);
+		
+	if (CreateFile(nFileHandle, filePath, fileName) < 0) then
+		WriteLogFile("Failed to create file: " + filePath ^ fileName);
+		return -1;
+	endif;
+
+	SeekBytes(nFileHandle, 0, FILE_BIN_START);
+
+	if (WriteBytes(nFileHandle, line, 0, StrLength(line)) < 0) then
+		WriteLogFile("Failed to write line.");
+		return -1;
+	endif;
+	
+	CloseFile(nFileHandle);
+	return 0;
+end; 
+
+function STRING ReadFileLine(filePath, fileName)
+	STRING svLine;
+	STRING svResult;
+	NUMBER nFileHandle;
+begin
+	if (FindFile(filePath, fileName, svResult) < 0) then
+		WriteLogFile("ReadFile: file does not exist: " +
+					 filePath ^ fileName);
+		return "";
+	endif;
+
+	OpenFileMode(FILE_MODE_NORMAL);
+
+	if (OpenFile(nFileHandle, filePath, fileName) < 0) then
+		WriteLogFile("ReadFile: cannot open file: " +
+					 filePath ^ fileName);
+		return "";
+	endif;
+
+	if (GetLine (nFileHandle, svLine) != 0) then 
+		WriteLogFile("ReadFile: cannot get file content: " +
+					 filePath ^ fileName);
+		svLine= "";
+	endif;
+	
+	CloseFile (nFileHandle);    
+	return svLine;
+end;

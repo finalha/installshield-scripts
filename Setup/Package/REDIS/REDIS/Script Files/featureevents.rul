@@ -1,0 +1,117 @@
+#include "common.rul"
+export prototype Redis_Installing();
+function Redis_Installing()
+STRING svMsiexec, svParam, svMsiSourcePackage,svMisDestPackage;
+begin
+  WriteLogFile("Setup Redis_Installing"); 
+  //CopyFileToDes(SUPPORTDIR^"Redis-x64-2.8.2103.msi",TempFolder^"Redis-x64-2.8.2103.msi");
+  //nResult = RunApplication(TempFolder ^ "Redis-x64-2.8.2103.msi","/qn",FALSE,TRUE,TRUE );
+  //nResult = LaunchAppAndWait(TempFolder^"Redis-x64-2.8.2103.msi","/qn /L*v c:\Redis_Install.log",WAIT|LAAW_OPTION_HIDDEN);
+  /*			
+    svMsiexec = WINSYSDIR ^ "msiexec.exe";   
+    svMsiSourcePackage = SUPPORTDIR ^ REDIS_MSI; 
+    svMisDestPackage = TempFolder^REDIS_MSI;
+    CopyFileToDes(svMsiSourcePackage,svMisDestPackage);
+    LongPathToQuote ( svMisDestPackage, TRUE ); 
+    svParam = "/i " + svMisDestPackage + " /qn /L*v c:\Redis_Install.log"; 
+    nResult=LaunchAppAndWait(svMsiexec, svParam, WAIT|LAAW_OPTION_HIDDEN);
+  if (nResult!=0) then
+  WriteLogFile("Fail to install Redis");
+  else 
+  WriteLogFile("Succeed to install Redis");
+  endif;
+  */
+end;
+
+export prototype Redis_Installed();
+function Redis_Installed()
+STRING svResult,svTime,svDate;
+NUMBER nvTime,nvDate;
+begin
+    WriteLogFile("Setup Redis_Installed"); 
+    //不管是否SSL时都修改redis.windows-service.conf中的port,SSL时还要再修改stunnel.conf中的accept;但是不管是否设置SSL，都要修改redis.windows-service.conf中的password
+    /*
+    if (svredisssl = "false") then 
+    nResult = RunApplication(SUPPORTDIR ^ "Redis_config.bat","\"" + svRedisInstalldir+"\""+" \"" + redisPort+"\""+" \"" + redisPassword+"\"",FALSE,TRUE,TRUE );
+    else 
+    nResult = RunApplication(SUPPORTDIR ^ "Redis_config.bat","\"" + svRedisInstalldir+"\""+" \"" + "\""+" \"" + redisPassword+"\"",FALSE,TRUE,TRUE );
+    endif;
+    */
+    nResult = RunApplication(SUPPORTDIR ^ "Redis_service.bat","\"" + svRedisInstalldir+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   	WriteLogFile("Fail to install service of redis");
+    else 
+    WriteLogFile("Succeed to install service of redis");
+   	endif;
+   	
+    nResult = RunApplication(SUPPORTDIR ^ "Redis_config.bat","\"" + svRedisInstalldir+"\""+" \"" + redisPort+"\""+" \"" + redisPassword+"\"",FALSE,TRUE,TRUE );
+    if (nResult!=0) then
+   	WriteLogFile("Fail to modify redis.windows-service.conf");
+    else 
+    WriteLogFile("Succeed to modify redis.windows-service.conf");
+   	endif;
+   	WriteRegistryRedis();
+   	//if ssl,config stunnel 
+   	if (svredisssl = "true") then 
+   	//kill process of stunnel.exe first
+    nResult = RunApplication("taskkill" , "/F /IM stunnel.exe /T", FALSE,TRUE,TRUE );
+    GetSystemInfo ( DATE, nvDate, svDate );
+    GetSystemInfo ( TIME, nvTime, svTime );
+    //文件名中不能存在special character:
+    StrReplace ( svTime, ":", "", 0 );
+    WriteLogFile(svDate+svTime);
+    nResult = RenameFile ( stunnelinstalldir^"config"^"stunnel.conf", stunnelinstalldir^"config"^"stunnel.confback"+svDate+svTime);
+    if (nResult < 0) then 
+    MessageBox(STUNNEL_ERR_RENAMECONF,WARNING);
+    abort; 
+    endif;
+    nResult = RunApplication(SUPPORTDIR ^ "Merge_cert_key.bat","\""+redisCertPath+"\""+" \""+redisPrivateKey+"\""+" \""+SUPPORTDIR ^ "rediscert.pem"+"\"", FALSE,TRUE,TRUE );
+    if (nResult != 0) then 
+    nResult = RenameFile ( stunnelinstalldir^"config"^"stunnel.confback", stunnelinstalldir^"config"^"stunnel.conf" );
+    Sprintf ( svResult, STUNNEL_ERR_MERGE_CERT_KEY, redisCertPath,redisPrivateKey); 
+    MessageBox(svResult,WARNING);
+    abort; 
+    endif;
+    CopyFileToDes(SUPPORTDIR ^ "rediscert.pem",stunnelinstalldir^"config"^"rediscert.pem");
+    CopyFileToDes(SUPPORTDIR ^ "stunnel.conf",stunnelinstalldir^"config"^"stunnel.conf");
+    //nResult = RunApplication(SUPPORTDIR ^ "Stunnel_config.bat","\""+stunnelinstalldir+"\""+" \""+redisSSLPort+"\"", FALSE,TRUE,TRUE );
+    nResult = RunApplication(SUPPORTDIR ^ "Stunnel_config.bat","\""+stunnelinstalldir+"\""+" \""+stunnelPort+"\""+" \""+redisPort+"\"", FALSE,TRUE,TRUE );
+    if (nResult != 0) then 
+    Sprintf ( svResult, STUNNEL_ERR_MODIFYCONF,stunnelinstalldir^"config"^"stunnel.conf"); 
+    MessageBox(svResult,WARNING);   
+    abort;  
+    endif;
+   	endif;
+   	
+end;
+
+export prototype Redis_UnInstalling();
+function Redis_UnInstalling()
+number nResult,nvResult;
+begin
+  WriteLogFile("Setup Redis_UnInstalling");  
+    //nResult = RunApplication(SUPPORTDIR ^ "uninstallRedis.bat",TempFolder+" "+REDIS_MSI,FALSE,TRUE,TRUE );
+        if ( ServiceExistsService ("Redis")) then 
+   		ServiceGetServiceState ("Redis" , nvResult );
+	     if ( nvResult=SERVICE_STOPPED )   then
+         	WriteLogFile("The NetBrain Redis Service has been stopped.");
+         else
+			ServiceStopService ("Redis"); 
+         endif;
+         ServiceRemoveService ("Redis");
+
+    nResult = DeleteFolder(svRedisInstalldir);
+    if (nResult!=0) then
+   	WriteLogFile("Fail to uninstall Redis");
+    else 
+    WriteLogFile("Succeed to uninstall Redis");
+   	endif;
+   	endif;
+end;
+
+export prototype Redis_UnInstalled();
+function Redis_UnInstalled()
+begin  
+  WriteLogFile("Setup Redis_UnInstalled"); 
+  DeleteRegistryRedis();
+end;
